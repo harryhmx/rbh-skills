@@ -1,3 +1,5 @@
+import importlib.util
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -5,7 +7,14 @@ from contextlib import asynccontextmanager
 
 from common.auth import setup_auth
 from common.db import init_db
-from sms_auth.scripts.sms import send_sms_verify_code, check_sms_verify_code
+
+_sms_spec = importlib.util.spec_from_file_location(
+    "sms", Path(__file__).parent / "sms-auth" / "scripts" / "sms.py"
+)
+_sms_mod = importlib.util.module_from_spec(_sms_spec)
+_sms_spec.loader.exec_module(_sms_mod)
+send_sms_verify_code = _sms_mod.send_sms_verify_code
+check_sms_verify_code = _sms_mod.check_sms_verify_code
 
 
 class SmsSendRequest(BaseModel):
