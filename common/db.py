@@ -7,6 +7,8 @@ _client = None
 
 def init_db():
     global _client
+    if not settings.SUPABASE_URL.strip():
+        return
     _client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
 
