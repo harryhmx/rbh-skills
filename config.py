@@ -7,8 +7,8 @@ load_dotenv()
 class Settings(BaseSettings):
     SUPABASE_URL: str
     SUPABASE_KEY: str
-    SMS_API_KEY: str
-    SMS_API_URL: str
+    ALIBABA_CLOUD_ACCESS_KEY_ID: str
+    ALIBABA_CLOUD_ACCESS_KEY_SECRET: str
     LLM_API_KEY: str
     LLM_MODEL: str = "claude-sonnet-4-6"
 

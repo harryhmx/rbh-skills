@@ -1,6 +1,6 @@
 ---
 name: sms-auth
-description: "SMS verification code authentication for user login and registration. Use when implementing phone-number-based auth flows: sending verification codes, verifying codes, and issuing JWT tokens. Reference implementation: explomic/backend."
+description: "SMS verification code authentication for user login and registration. Use when implementing phone-number-based auth flows: sending verification codes, verifying codes, and issuing JWT tokens."
 ---
 
 # SMS Auth
@@ -178,9 +178,9 @@ See [references/requirements.txt](references/requirements.txt) for full dependen
 
 ## Adaptation Notes
 
-This skill is adapted from the explomic Django implementation. Key changes for this FastAPI + Supabase project:
+This skill is adapted from a reference Django implementation. Key changes for this FastAPI + Supabase project:
 
-| Aspect | Explomic (Reference) | RBH Skills (This Project) |
+| Aspect | Reference Project | RBH Skills (This Project) |
 |--------|---------------------|---------------------------|
 | Framework | Django + DRF | FastAPI |
 | Database | Django ORM (SQLite) | Supabase (PostgreSQL) |
@@ -188,11 +188,3 @@ This skill is adapted from the explomic Django implementation. Key changes for t
 | JWT | djangorestframework-simplejwt | PyJWT / python-jose |
 | Config | Django settings + .env | pydantic-settings |
 | Routing | DRF ViewSet + urls.py | FastAPI router |
-
-## Reference Implementation
-
-- **SMS service:** `/home/harry/projects/explomic/backend/course/sms_service.py`
-- **SMS views:** `/home/harry/projects/explomic/backend/course/views.py` (SmsSendView, SmsVerifyView)
-- **User model:** `/home/harry/projects/explomic/backend/course/models.py` (CustomUser)
-- **URL routes:** `/home/harry/projects/explomic/backend/course/urls.py`
-- **Demo scripts:** `/home/harry/projects/explomic/backend/scripts/`
