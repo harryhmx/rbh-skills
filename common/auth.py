@@ -5,7 +5,8 @@ import supabase
 def setup_auth(app: FastAPI):
     @app.middleware("http")
     async def auth_middleware(request, call_next):
-        if request.url.path == "/health":
+        skip_paths = ["/health", "/api/auth/sms/send", "/api/auth/sms/verify"]
+        if request.url.path in skip_paths or request.method == "OPTIONS":
             return await call_next(request)
         token = request.headers.get("Authorization")
         if not token:
