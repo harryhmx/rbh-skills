@@ -170,11 +170,10 @@ Core module containing all SMS auth logic:
 
 ## Dependencies
 
-```bash
-pip install alibabacloud-dypnsapi20170525 alibabacloud-credentials
-```
+Dependencies are managed in the project root [requirements.txt](../requirements.txt):
 
-See [references/requirements.txt](references/requirements.txt) for full dependency list.
+- `alibabacloud-dypnsapi20170525>=2.0.0`
+- `alibabacloud-credentials>=1.0.0`
 
 ## Adaptation Notes
 

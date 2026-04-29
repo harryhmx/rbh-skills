@@ -12,9 +12,9 @@ Backend skills for the RBH Agent learning platform. Each skill is an independent
 
 ## Tech Stack
 
-- Python 3.11+
+- Python 3.12+
 - FastAPI + Uvicorn
-- LLM: Zhipu AI GLM-5
+- LLM: SiliconFlow (OpenAI-compatible API)
 
 ## Architecture
 
@@ -34,10 +34,6 @@ RBH Agent Frontend (Next.js, Vercel)
 ```bash
 # Install dependencies
 pip install -r requirements.txt
-
-# Install skill-specific dependencies
-pip install -r sms-auth/references/requirements.txt
-pip install -r course-generation/references/requirements.txt
 
 # Run development server
 uvicorn server:app --reload --host 0.0.0.0 --port 8000
