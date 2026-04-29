@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from common.auth import setup_auth
@@ -12,6 +13,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="RBH Skills API", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 setup_auth(app)
 
