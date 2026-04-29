@@ -20,6 +20,9 @@ env/
 # Docs (local only, not tracked)
 docs/
 
+# Claude Code
+.claude/
+
 # IDE
 .vscode/
 .idea/
