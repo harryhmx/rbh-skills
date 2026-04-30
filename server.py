@@ -1,5 +1,4 @@
 import importlib.util
-import logging
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,26 +6,7 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
 from common.auth import setup_auth
-from common.db import init_db, get_db
-
-logger = logging.getLogger(__name__)
-
-STORAGE_BUCKETS = ["stories"]
-
-
-def _ensure_storage_buckets():
-    """Create required Supabase Storage buckets if they don't exist."""
-    db = get_db()
-    for name in STORAGE_BUCKETS:
-        try:
-            buckets = db.storage.list_buckets()
-            if not any(b.name == name for b in buckets):
-                db.storage.create_bucket(name, {"public": True})
-                logger.info("Created Storage bucket: %s", name)
-            else:
-                logger.info("Storage bucket already exists: %s", name)
-        except Exception as e:
-            logger.error("Failed to ensure Storage bucket '%s': %s", name, e)
+from common.db import init_db
 
 _sms_spec = importlib.util.spec_from_file_location(
     "sms", Path(__file__).parent / "sms-auth" / "scripts" / "sms.py"
@@ -69,7 +49,6 @@ class StoryRequest(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    _ensure_storage_buckets()
     yield
 
 
