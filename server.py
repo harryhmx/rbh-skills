@@ -40,6 +40,10 @@ class StoryRequest(BaseModel):
     user_age: int
     user_level: str
     project_id: str
+    require_story_id: str | None = None
+    require_choice: str | None = None
+    depth: int = 0
+    parent_story_title: str | None = None
 
 
 @asynccontextmanager
@@ -78,7 +82,13 @@ async def sms_verify(req: SmsVerifyRequest):
 
 @app.post("/api/story/generate")
 async def generate_story_endpoint(req: StoryRequest):
-    existing = find_story(req.project_id, req.user_age, req.user_level)
+    existing = find_story(
+        req.project_id,
+        req.user_age,
+        req.user_level,
+        require_story_id=req.require_story_id,
+        require_choice=req.require_choice,
+    )
     if existing:
         return {"story": existing, "generated": False}
 
@@ -88,5 +98,9 @@ async def generate_story_endpoint(req: StoryRequest):
         user_age=req.user_age,
         user_level=req.user_level,
         project_id=req.project_id,
+        require_story_id=req.require_story_id,
+        require_choice=req.require_choice,
+        depth=req.depth,
+        parent_story_title=req.parent_story_title,
     )
     return {"story": story, "generated": True}
