@@ -2,6 +2,8 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
+from importlib.util import spec_from_file_location, module_from_spec
+from pathlib import Path
 
 from common.db import get_db
 from config import settings
@@ -9,13 +11,40 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
+_SCRIPTS_DIR = Path(__file__).parent
+
+
+def _load_module(name: str, filename: str):
+    spec = spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_image_mod = None
+_speech_mod = None
+
+
+def _get_image_module():
+    global _image_mod
+    if _image_mod is None:
+        _image_mod = _load_module("image_gen", "image.py")
+    return _image_mod
+
+
+def _get_speech_module():
+    global _speech_mod
+    if _speech_mod is None:
+        _speech_mod = _load_module("speech_gen", "speech.py")
+    return _speech_mod
+
 _SYSTEM_PROMPT = """You are a children's story and question generator.
 Given a project's title and description, along with the reader's age and Lexile Level, generate a short story chapter with two questions.
 
 Requirements:
 - The story should be age-appropriate and match the reader's Lexile Level.
 - The content must be written in markdown format (can include headings, bold text, etc.).
-- The story body MUST be concise and engaging (150-250 words).
+- The story body MUST be concise and engaging (60-100 words).
 - Write the story in English, in the style of Roald Dahl.
 
 Generate two questions at the end of the story:
@@ -176,16 +205,14 @@ def generate_and_sync_story(
     # Generate image
     image_url = None
     try:
-        from image import generate_image
-        image_url = generate_image(story_data["title"], story_data["content"], story_id=story_id)
+        image_url = _get_image_module().generate_image(story_data["title"], story_data["content"], story_id=story_id)
     except Exception as e:
         logger.warning("Image generation failed: %s", e)
 
     # Generate audio
     audio_url = None
     try:
-        from speech import generate_speech
-        audio_url = generate_speech(story_data["title"], story_data["content"], story_id=story_id)
+        audio_url = _get_speech_module().generate_speech(story_data["title"], story_data["content"], story_id=story_id)
     except Exception as e:
         logger.warning("Speech generation failed: %s", e)
 
