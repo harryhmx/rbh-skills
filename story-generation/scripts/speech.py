@@ -1,4 +1,3 @@
-import io
 import logging
 import re
 import uuid
@@ -24,25 +23,6 @@ def _strip_markdown(text: str) -> str:
     return text.strip()
 
 
-def _amplify_audio(audio_bytes: bytes, gain_db: float = 10.0) -> bytes:
-    """Amplify audio using pydub, falls back to raw bytes if unavailable."""
-    try:
-        from pydub import AudioSegment
-        buf = io.BytesIO(audio_bytes)
-        audio = AudioSegment.from_mp3(buf)
-        audio = audio + gain_db
-        buf = io.BytesIO()
-        audio.export(buf, format="mp3")
-        logger.info("[speech] Amplified audio by %.0f dB", gain_db)
-        return buf.getvalue()
-    except ImportError:
-        logger.warning("[speech] pydub not installed, skipping amplification")
-        return audio_bytes
-    except Exception as e:
-        logger.warning("[speech] Amplification failed: %s", e)
-        return audio_bytes
-
-
 def generate_speech(story_title: str, story_content: str, story_id: str | None = None) -> str | None:
     if story_id is None:
         story_id = str(uuid.uuid4())
@@ -64,8 +44,6 @@ def generate_speech(story_title: str, story_content: str, story_id: str | None =
 
     audio_bytes = response.content if hasattr(response, "content") else response.read()
     logger.info("[speech] Got %d bytes", len(audio_bytes))
-
-    audio_bytes = _amplify_audio(audio_bytes)
 
     try:
         file_path = f"audio/{story_id}.mp3"
