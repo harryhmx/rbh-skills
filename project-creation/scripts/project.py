@@ -1,7 +1,7 @@
 import json
 import logging
-from datetime import datetime, timezone
 import uuid
+from datetime import datetime, timezone
 
 from common.db import get_db
 from config import settings
@@ -10,7 +10,7 @@ from openai import OpenAI
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = """You are a project title and description generator.
-Given a topic or idea, generate a concise project title (max 100 characters) and a detailed description (100-200 words, markdown format).
+Given a topic or idea, generate a concise project title (max 100 characters) and a brief description (100-200 characters).
 Return ONLY a valid JSON object with exactly two keys: "title" and "description".
 No markdown, no extra text, no code fences."""
 
