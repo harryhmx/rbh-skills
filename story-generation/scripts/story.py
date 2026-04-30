@@ -2,7 +2,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
-from importlib.util import spec_from_file_location, module_from_spec
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 from common.db import get_db
@@ -22,13 +22,22 @@ def _load_module(name: str, filename: str):
 
 
 _image_mod = None
+_speech_mod = None
 
 
-def _get_media_module():
+def _get_image_module():
     global _image_mod
     if _image_mod is None:
-        _image_mod = _load_module("media_gen", "image.py")
+        _image_mod = _load_module("image_gen", "image.py")
     return _image_mod
+
+
+def _get_speech_module():
+    global _speech_mod
+    if _speech_mod is None:
+        _speech_mod = _load_module("speech_gen", "speech.py")
+    return _speech_mod
+
 
 _SYSTEM_PROMPT = """You are a children's story and question generator.
 Given a project's title and description, along with the reader's age and Lexile Level, generate a short story chapter with two questions.
@@ -50,7 +59,6 @@ Generate two questions at the end of the story:
 - 2 options: A, B
 - Tests higher-level thinking (critical thinking, creativity, wisdom)
 - Asks the student to decide the protagonist's action, which shapes the story's continuation
-- There should be no clear right or wrong answer, but mark one as correct with ✓
 
 Return ONLY a valid JSON object with exactly five keys: "title", "content", "rcQuestion", "rcAnswer", "ctQuestion".
 - "title": a concise story title (max 100 characters)
@@ -197,14 +205,18 @@ def generate_and_sync_story(
     # Generate image
     image_url = None
     try:
-        image_url = _get_media_module().generate_image(story_data["title"], story_data["content"], story_id=story_id)
+        image_url = _get_image_module().generate_image(
+            story_data["title"], story_data["content"], story_id=story_id
+        )
     except Exception as e:
         logger.warning("Image generation failed: %s", e)
 
     # Generate audio
     audio_url = None
     try:
-        audio_url = _get_media_module().generate_speech(story_data["title"], story_data["content"], story_id=story_id)
+        audio_url = _get_speech_module().generate_speech(
+            story_data["title"], story_data["content"], story_id=story_id
+        )
     except Exception as e:
         logger.warning("Speech generation failed: %s", e)
 
