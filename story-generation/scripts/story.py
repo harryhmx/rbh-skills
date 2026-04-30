@@ -102,6 +102,7 @@ def generate_story(
     user_level: str,
     parent_story_title: str | None = None,
     parent_choice: str | None = None,
+    parent_story_content: str | None = None,
 ) -> dict:
     client = OpenAI(
         api_key=settings.LLM_API_KEY,
@@ -114,7 +115,16 @@ def generate_story(
         f"Reader age: {user_age}\n"
         f"Reader level: {user_level}"
     )
-    if parent_story_title and parent_choice:
+    if parent_story_content and parent_choice:
+        prompt += (
+            f"\n\nThis is a continuation. Here is the previous story:\n\n"
+            f"Title: {parent_story_title}\n"
+            f"{parent_story_content}\n\n"
+            f"The reader chose option {parent_choice.upper()}. "
+            "Continue the story based on that choice. The new chapter should "
+            "naturally follow from the previous story events and the reader's decision."
+        )
+    elif parent_story_title and parent_choice:
         prompt += (
             f"\n\nThis is a continuation. The previous story was titled '{parent_story_title}' "
             f"and the reader chose option {parent_choice.upper()}. "
@@ -209,6 +219,7 @@ def generate_and_sync_story(
     require_choice: str | None = None,
     depth: int = 0,
     parent_story_title: str | None = None,
+    parent_story_content: str | None = None,
 ) -> dict:
     story_data = generate_story(
         project_title,
@@ -217,6 +228,7 @@ def generate_and_sync_story(
         user_level,
         parent_story_title=parent_story_title,
         parent_choice=require_choice,
+        parent_story_content=parent_story_content,
     )
 
     story_id = str(uuid.uuid4())

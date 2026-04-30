@@ -44,6 +44,7 @@ class StoryRequest(BaseModel):
     require_choice: str | None = None
     depth: int = 0
     parent_story_title: str | None = None
+    parent_story_content: str | None = None
 
 
 @asynccontextmanager
@@ -102,5 +103,6 @@ async def generate_story_endpoint(req: StoryRequest):
         require_choice=req.require_choice,
         depth=req.depth,
         parent_story_title=req.parent_story_title,
+        parent_story_content=req.parent_story_content,
     )
     return {"story": story, "generated": True}
