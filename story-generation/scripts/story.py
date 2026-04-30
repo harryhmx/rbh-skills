@@ -106,6 +106,7 @@ def generate_story(
     client = OpenAI(
         api_key=settings.LLM_API_KEY,
         base_url=settings.LLM_BASE_URL,
+        timeout=60.0,
     )
     prompt = (
         f"Project title: {project_title}\n"
@@ -119,18 +120,36 @@ def generate_story(
             f"and the reader chose option {parent_choice.upper()}. "
             "Continue the story based on that choice."
         )
-    response = client.chat.completions.create(
-        model=settings.LLM_CHAT_MODEL,
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.7,
-    )
-    raw = response.choices[0].message.content.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
-    data = json.loads(raw)
+
+    for attempt in range(1, 4):
+        try:
+            logger.info("[story] Generating... (attempt %d/3)", attempt)
+            response = client.chat.completions.create(
+                model=settings.LLM_CHAT_MODEL,
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.7,
+            )
+            raw = response.choices[0].message.content.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
+            data = json.loads(raw)
+
+            required = ["title", "content", "rcQuestion", "rcAnswer", "ctQuestion"]
+            missing = [k for k in required if not data.get(k)]
+            if missing:
+                logger.warning("[story] Missing fields: %s, retrying", missing)
+                continue
+
+            break
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning("[story] Parse error (attempt %d): %s", attempt, e)
+            continue
+    else:
+        logger.error("[story] All 3 attempts failed")
+        raise RuntimeError("Failed to generate valid story after 3 attempts")
     return {
         "title": data["title"],
         "content": data["content"],
