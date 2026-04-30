@@ -48,7 +48,7 @@ def generate_image(story_title: str, story_content: str, story_id: str | None = 
         db = get_db()
         db.storage.from_(BUCKET).upload(
             file_path,
-            io.BytesIO(img_res.content),
+            img_res.content,
             {"content-type": "image/png", "upsert": "true"},
         )
         public_url = db.storage.from_(BUCKET).get_public_url(file_path)
@@ -87,7 +87,7 @@ def generate_speech(story_title: str, story_content: str, story_id: str | None =
         db = get_db()
         db.storage.from_(BUCKET).upload(
             file_path,
-            io.BytesIO(audio_bytes),
+            audio_bytes,
             {"content-type": "audio/mpeg", "upsert": "true"},
         )
         public_url = db.storage.from_(BUCKET).get_public_url(file_path)
