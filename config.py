@@ -13,7 +13,11 @@ class Settings(BaseSettings):
     ALIBABA_CLOUD_ACCESS_KEY_SECRET: str = ""
     LLM_API_KEY: str = ""
     LLM_BASE_URL: str = "https://api.siliconflow.cn/v1"
-    LLM_MODEL: str = "Qwen/Qwen2.5-72B-Instruct"
+    LLM_CHAT_MODEL: str = "Qwen/Qwen2.5-72B-Instruct"
+    LLM_IMAGE_MODEL: str = "black-forest-labs/FLUX.2-pro"
+    LLM_IMAGE_SIZE: str = "512x512"
+    LLM_SPEECH_MODEL: str = "fishaudio/fish-speech-1.5"
+    LLM_SPEECH_VOICE: str = "fishaudio/fish-speech-1.5:anna"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
