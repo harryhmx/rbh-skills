@@ -16,6 +16,14 @@ _sms_spec.loader.exec_module(_sms_mod)
 send_sms_verify_code = _sms_mod.send_sms_verify_code
 check_sms_verify_code = _sms_mod.check_sms_verify_code
 
+_story_spec = importlib.util.spec_from_file_location(
+    "story", Path(__file__).parent / "story-generation" / "scripts" / "story.py"
+)
+_story_mod = importlib.util.module_from_spec(_story_spec)
+_story_spec.loader.exec_module(_story_mod)
+find_story = _story_mod.find_story
+generate_and_sync_story = _story_mod.generate_and_sync_story
+
 
 class SmsSendRequest(BaseModel):
     phone_number: str
@@ -24,6 +32,14 @@ class SmsSendRequest(BaseModel):
 class SmsVerifyRequest(BaseModel):
     phone_number: str
     verify_code: str
+
+
+class StoryRequest(BaseModel):
+    project_title: str
+    project_description: str
+    user_age: int
+    user_level: str
+    project_id: str
 
 
 @asynccontextmanager
@@ -58,3 +74,19 @@ async def sms_send(req: SmsSendRequest):
 @app.post("/api/auth/sms/verify")
 async def sms_verify(req: SmsVerifyRequest):
     return check_sms_verify_code(req.phone_number, req.verify_code)
+
+
+@app.post("/api/story/generate")
+async def generate_story_endpoint(req: StoryRequest):
+    existing = find_story(req.project_id, req.user_age, req.user_level)
+    if existing:
+        return {"story": existing, "generated": False}
+
+    story = generate_and_sync_story(
+        project_title=req.project_title,
+        project_description=req.project_description,
+        user_age=req.user_age,
+        user_level=req.user_level,
+        project_id=req.project_id,
+    )
+    return {"story": story, "generated": True}

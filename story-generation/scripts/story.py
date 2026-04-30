@@ -24,6 +24,22 @@ Return ONLY a valid JSON object with exactly two keys: "title" and "content".
 No markdown, no extra text, no code fences."""
 
 
+def find_story(project_id: str, user_age: int, user_level: str) -> dict | None:
+    db = get_db()
+    result = (
+        db.table("Story")
+        .select("*")
+        .eq("projectId", project_id)
+        .eq("age", user_age)
+        .eq("level", user_level)
+        .limit(1)
+        .execute()
+    )
+    if result.data:
+        return result.data[0]
+    return None
+
+
 def generate_story(
     project_title: str,
     project_description: str,
@@ -55,13 +71,15 @@ def generate_story(
     return {"title": data["title"], "content": data["content"]}
 
 
-def insert_story(title: str, content: str, project_id: str) -> dict:
+def insert_story(title: str, content: str, project_id: str, user_age: int, user_level: str) -> dict:
     db = get_db()
     now = datetime.now(timezone.utc).isoformat()
     payload = {
         "id": str(uuid.uuid4()),
         "title": title,
         "content": content,
+        "age": user_age,
+        "level": user_level,
         "projectId": project_id,
         "createdAt": now,
         "updatedAt": now,
@@ -80,4 +98,4 @@ def generate_and_sync_story(
     story_data = generate_story(
         project_title, project_description, user_age, user_level
     )
-    return insert_story(story_data["title"], story_data["content"], project_id)
+    return insert_story(story_data["title"], story_data["content"], project_id, user_age, user_level)
