@@ -125,11 +125,12 @@ def insert_story(
     require_story_id: str | None = None,
     require_choice: str | None = None,
     depth: int = 0,
+    story_id: str | None = None,
 ) -> dict:
     db = get_db()
     now = datetime.now(timezone.utc).isoformat()
     payload = {
-        "id": str(uuid.uuid4()),
+        "id": story_id or str(uuid.uuid4()),
         "title": title,
         "content": content,
         "imageUrl": image_url,
@@ -202,4 +203,5 @@ def generate_and_sync_story(
         require_story_id=require_story_id,
         require_choice=require_choice,
         depth=depth,
+        story_id=story_id,
     )

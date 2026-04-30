@@ -8,11 +8,14 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-BUCKET_NAME = "story-audio"
+BUCKET = "stories"
 
 
 def generate_speech(story_title: str, story_content: str, story_id: str | None = None) -> str:
     """Generate audio via SiliconFlow TTS and upload to Supabase Storage. Returns the public URL."""
+    if story_id is None:
+        story_id = str(uuid.uuid4())
+
     client = OpenAI(
         api_key=settings.LLM_API_KEY,
         base_url=settings.LLM_BASE_URL,
@@ -26,14 +29,14 @@ def generate_speech(story_title: str, story_content: str, story_id: str | None =
         input=text,
     )
 
-    if story_id is None:
-        story_id = str(uuid.uuid4())
+    audio_bytes = response.content if hasattr(response, "content") else response.read()
+
+    # Upload to Supabase Storage: stories/audio/{story_id}.mp3
+    file_path = f"audio/{story_id}.mp3"
 
     db = get_db()
-    file_path = f"{story_id}.mp3"
-
-    db.storage.from_(BUCKET_NAME).upload(file_path, response.content, {
+    db.storage.from_(BUCKET).upload(file_path, audio_bytes, {
         "content-type": "audio/mpeg",
     })
 
-    return db.storage.from_(BUCKET_NAME).get_public_url(file_path)
+    return db.storage.from_(BUCKET).get_public_url(file_path)
