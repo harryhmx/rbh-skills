@@ -63,9 +63,9 @@ Generate two questions at the end of the story:
 Return ONLY a valid JSON object with exactly five keys: "title", "content", "rcQuestion", "rcAnswer", "ctQuestion".
 - "title": a concise story title (max 100 characters)
 - "content": the story body in markdown format
-- "rcQuestion": the RC question text followed by a blank line then "..." then a blank line then the 4 choices, one per line, each formatted as "letter|letter) option text". Example: "What did the hero find?\\n\\n...\\n\\na|a) A map\\nb|b) A key\\nc|c) A ring\\nd|d) A coin"
+- "rcQuestion": the RC question text followed by EXACTLY TWO blank lines then "..." then EXACTLY TWO blank lines then the 4 choices, one per line, each formatted as "letter|letter) option text". CRITICAL FORMAT: "What did the hero find?\\n\\n...\\n\\na|a) A map\\nb|b) A key\\nc|c) A ring\\nd|d) A coin". There MUST be exactly two newlines before "..." and exactly two newlines after "...". Do NOT use a single newline.
 - "rcAnswer": the correct answer letter only, e.g. "b"
-- "ctQuestion": the CT question text followed by "..." then 2 choices. Example: "What should the hero do?\\n\\n...\\n\\na|a) Go home\\nb|b) Keep exploring"
+- "ctQuestion": the CT question text followed by EXACTLY TWO blank lines then "..." then EXACTLY TWO blank lines then 2 choices. CRITICAL FORMAT: "What should the hero do?\\n\\n...\\n\\na|a) Go home\\nb|b) Keep exploring". Same two-newline rule applies.
 
 No markdown, no extra text, no code fences."""
 
