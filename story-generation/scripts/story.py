@@ -267,3 +267,80 @@ def generate_and_sync_story(
         depth=depth,
         story_id=story_id,
     )
+
+
+def generate_and_insert_story(
+    project_title: str,
+    project_description: str,
+    user_age: int,
+    user_level: str,
+    project_id: str,
+    require_story_id: str | None = None,
+    require_choice: str | None = None,
+    depth: int = 0,
+    parent_story_title: str | None = None,
+    parent_story_content: str | None = None,
+) -> dict:
+    story_data = generate_story(
+        project_title,
+        project_description,
+        user_age,
+        user_level,
+        parent_story_title=parent_story_title,
+        parent_choice=require_choice,
+        parent_story_content=parent_story_content,
+    )
+
+    story_id = str(uuid.uuid4())
+    return insert_story(
+        title=story_data["title"],
+        content=story_data["content"],
+        project_id=project_id,
+        user_age=user_age,
+        user_level=user_level,
+        rc_question=story_data.get("rcQuestion"),
+        rc_answer=story_data.get("rcAnswer"),
+        ct_question=story_data.get("ctQuestion"),
+        require_story_id=require_story_id,
+        require_choice=require_choice,
+        depth=depth,
+        story_id=story_id,
+    )
+
+
+def update_story_media(story_id: str, title: str, content: str):
+    db = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    update_fields = {"updatedAt": now}
+
+    image_url = None
+    try:
+        image_url = _get_image_module().generate_image(
+            title, content, story_id=story_id
+        )
+        if image_url:
+            update_fields["imageUrl"] = image_url
+            logger.info("[story-media] Image ready: %s", image_url)
+            db.table("Story").update(update_fields).eq("id", story_id).execute()
+    except Exception as e:
+        logger.warning("[story-media] Image generation failed: %s", e)
+
+    audio_url = None
+    try:
+        audio_url = _get_speech_module().generate_speech(
+            title, content, story_id=story_id
+        )
+        if audio_url:
+            update_fields["audioUrl"] = audio_url
+            logger.info("[story-media] Audio ready: %s", audio_url)
+            db.table("Story").update(update_fields).eq("id", story_id).execute()
+    except Exception as e:
+        logger.warning("[story-media] Speech generation failed: %s", e)
+
+
+def get_story_by_id(story_id: str) -> dict | None:
+    db = get_db()
+    result = db.table("Story").select("id, imageUrl, audioUrl").eq("id", story_id).execute()
+    if result.data:
+        return result.data[0]
+    return None
