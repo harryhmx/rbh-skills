@@ -51,6 +51,7 @@ class StoryRequest(BaseModel):
     depth: int = 0
     parent_story_title: str | None = None
     parent_story_content: str | None = None
+    fresh_story: bool = False
 
 
 @asynccontextmanager
@@ -89,7 +90,7 @@ async def sms_verify(req: SmsVerifyRequest):
 
 @app.post("/api/story/generate")
 async def generate_story_endpoint(req: StoryRequest, background_tasks: BackgroundTasks):
-    existing = find_story(
+    existing = None if req.fresh_story else find_story(
         req.project_id,
         req.user_age,
         req.user_level,
