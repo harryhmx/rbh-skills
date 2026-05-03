@@ -43,10 +43,10 @@ _SYSTEM_PROMPT = """You are a children's story and question generator.
 Given a project's title and description, along with the reader's age and Lexile Level, generate a short story chapter with two questions.
 
 Requirements:
-- The story should be age-appropriate and match the reader's Lexile Level.
+- The story should match the reader's maturity level (based on his or her age) and English reading level (based on his or her Lexile level).
 - The content must be written in markdown format (can include headings, bold text, etc.).
 - The story body MUST be concise and engaging (60-100 words).
-- Write the story in English, in the style of Roald Dahl.
+- Write the story in English, in the style of Roald Dahl, and in the structure of a fable, in the style of Aesop's Fables.
 
 Generate two questions at the end of the story:
 
@@ -57,8 +57,9 @@ Generate two questions at the end of the story:
 
 **CT Question (Critical Thinking):**
 - 2 options: A, B
-- Tests higher-level thinking (critical thinking, creativity, wisdom)
-- Asks the student to decide the protagonist's action, which shapes the story's continuation
+- Tests higher-level thinking (critical thinking, logical reasoning, creativity, wisdom)
+- Make the choice challenging - one that forces the reader to think, one where there is no clear right or wrong answer, but rather, one that simply reveals the character and preferences of the reader
+- Asks the student to decide the protagonist's action, which then shapes how the story continues in the following chapter (this is the MOST IMPORTANT part of the story)
 
 Return ONLY a valid JSON object with exactly five keys: "title", "content", "rcQuestion", "rcAnswer", "ctQuestion".
 - "title": a concise story title (max 100 characters)
@@ -120,14 +121,14 @@ def generate_story(
             f"\n\nThis is a continuation. Here is the previous story:\n\n"
             f"Title: {parent_story_title}\n"
             f"{parent_story_content}\n\n"
-            f"The reader chose option {parent_choice.upper()}. "
+            f"The reader chose: \"{parent_choice}\". "
             "Continue the story based on that choice. The new chapter should "
             "naturally follow from the previous story events and the reader's decision."
         )
     elif parent_story_title and parent_choice:
         prompt += (
             f"\n\nThis is a continuation. The previous story was titled '{parent_story_title}' "
-            f"and the reader chose option {parent_choice.upper()}. "
+            f"and the reader chose: \"{parent_choice}\". "
             "Continue the story based on that choice."
         )
 
