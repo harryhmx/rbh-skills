@@ -70,6 +70,23 @@ Return ONLY a valid JSON object with exactly five keys: "title", "content", "rcQ
 
 No markdown, no extra text, no code fences."""
 
+_CONCLUSION_PROMPT = """You are a children's story generator.
+Given a project's title and description, along with the reader's age and Lexile Level, generate a short story chapter that serves as the conclusion of a story arc.
+
+Requirements:
+- The story should match the reader's maturity level (based on his or her age) and English reading level (based on his or her Lexile level).
+- The content must be written in markdown format (can include headings, bold text, etc.).
+- The story body MUST be concise and engaging (60-100 words).
+- Write the story in English, in the style of Roald Dahl, and in the structure of a fable, in the style of Aesop's Fables.
+- This is the FINAL chapter of a story arc — wrap up the narrative naturally with a sense of closure and a gentle moral.
+- Do NOT generate any questions. This chapter has no questions.
+
+Return ONLY a valid JSON object with exactly two keys: "title" and "content".
+- "title": a concise story title (max 100 characters)
+- "content": the story body in markdown format. Do NOT repeat the title in the content. Start directly with the story narrative.
+
+No markdown, no extra text, no code fences."""
+
 
 def find_story(
     project_id: str,
@@ -104,6 +121,7 @@ def generate_story(
     parent_story_title: str | None = None,
     parent_choice: str | None = None,
     parent_story_content: str | None = None,
+    is_conclusion: bool = False,
 ) -> dict:
     client = OpenAI(
         api_key=settings.LLM_API_KEY,
@@ -132,13 +150,17 @@ def generate_story(
             "Continue the story based on that choice."
         )
 
+    system_prompt = _CONCLUSION_PROMPT if is_conclusion else _SYSTEM_PROMPT
+    required_fields = (["title", "content"] if is_conclusion
+                       else ["title", "content", "rcQuestion", "rcAnswer", "ctQuestion"])
+
     for attempt in range(1, 4):
         try:
-            logger.info("[story] Generating... (attempt %d/3)", attempt)
+            logger.info("[story] Generating... (attempt %d/3, conclusion=%s)", attempt, is_conclusion)
             response = client.chat.completions.create(
                 model=settings.LLM_CHAT_MODEL,
                 messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.7,
@@ -148,8 +170,7 @@ def generate_story(
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
             data = json.loads(raw)
 
-            required = ["title", "content", "rcQuestion", "rcAnswer", "ctQuestion"]
-            missing = [k for k in required if not data.get(k)]
+            missing = [k for k in required_fields if not data.get(k)]
             if missing:
                 logger.warning("[story] Missing fields: %s, retrying", missing)
                 continue
@@ -222,6 +243,7 @@ def generate_and_sync_story(
     parent_story_title: str | None = None,
     parent_story_content: str | None = None,
 ) -> dict:
+    is_conclusion = (depth + 1) % 4 == 0
     story_data = generate_story(
         project_title,
         project_description,
@@ -230,6 +252,7 @@ def generate_and_sync_story(
         parent_story_title=parent_story_title,
         parent_choice=require_choice,
         parent_story_content=parent_story_content,
+        is_conclusion=is_conclusion,
     )
 
     story_id = str(uuid.uuid4())
@@ -282,6 +305,7 @@ def generate_and_insert_story(
     parent_story_title: str | None = None,
     parent_story_content: str | None = None,
 ) -> dict:
+    is_conclusion = (depth + 1) % 4 == 0
     story_data = generate_story(
         project_title,
         project_description,
@@ -290,6 +314,7 @@ def generate_and_insert_story(
         parent_story_title=parent_story_title,
         parent_choice=require_choice,
         parent_story_content=parent_story_content,
+        is_conclusion=is_conclusion,
     )
 
     story_id = str(uuid.uuid4())
