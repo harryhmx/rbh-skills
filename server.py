@@ -51,6 +51,8 @@ class StoryRequest(BaseModel):
     depth: int = 0
     parent_story_title: str | None = None
     parent_story_content: str | None = None
+    system_prompt: str | None = None
+    conclusion_prompt: str | None = None
     fresh_story: bool = False
 
 
@@ -122,6 +124,8 @@ async def generate_story_endpoint(req: StoryRequest, background_tasks: Backgroun
         depth=req.depth,
         parent_story_title=req.parent_story_title,
         parent_story_content=req.parent_story_content,
+        system_prompt=req.system_prompt,
+        conclusion_prompt=req.conclusion_prompt,
     )
 
     background_tasks.add_task(

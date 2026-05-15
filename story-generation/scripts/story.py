@@ -122,6 +122,8 @@ def generate_story(
     parent_choice: str | None = None,
     parent_story_content: str | None = None,
     is_conclusion: bool = False,
+    system_prompt_override: str | None = None,
+    conclusion_prompt_override: str | None = None,
 ) -> dict:
     client = OpenAI(
         api_key=settings.LLM_API_KEY,
@@ -150,7 +152,10 @@ def generate_story(
             "Continue the story based on that choice."
         )
 
-    system_prompt = _CONCLUSION_PROMPT if is_conclusion else _SYSTEM_PROMPT
+    system_prompt = (
+        conclusion_prompt_override or _CONCLUSION_PROMPT if is_conclusion
+        else system_prompt_override or _SYSTEM_PROMPT
+    )
     required_fields = (["title", "content"] if is_conclusion
                        else ["title", "content", "rcQuestion", "rcAnswer", "ctQuestion"])
 
@@ -242,6 +247,8 @@ def generate_and_sync_story(
     depth: int = 0,
     parent_story_title: str | None = None,
     parent_story_content: str | None = None,
+    system_prompt: str | None = None,
+    conclusion_prompt: str | None = None,
 ) -> dict:
     is_conclusion = (depth + 1) % 4 == 0
     story_data = generate_story(
@@ -253,6 +260,8 @@ def generate_and_sync_story(
         parent_choice=require_choice,
         parent_story_content=parent_story_content,
         is_conclusion=is_conclusion,
+        system_prompt_override=system_prompt,
+        conclusion_prompt_override=conclusion_prompt,
     )
 
     story_id = str(uuid.uuid4())
@@ -304,6 +313,8 @@ def generate_and_insert_story(
     depth: int = 0,
     parent_story_title: str | None = None,
     parent_story_content: str | None = None,
+    system_prompt: str | None = None,
+    conclusion_prompt: str | None = None,
 ) -> dict:
     is_conclusion = (depth + 1) % 4 == 0
     story_data = generate_story(
@@ -315,6 +326,8 @@ def generate_and_insert_story(
         parent_choice=require_choice,
         parent_story_content=parent_story_content,
         is_conclusion=is_conclusion,
+        system_prompt_override=system_prompt,
+        conclusion_prompt_override=conclusion_prompt,
     )
 
     story_id = str(uuid.uuid4())
