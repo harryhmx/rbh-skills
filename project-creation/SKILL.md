@@ -53,9 +53,9 @@ Supabase INSERT → Project table
 
 | Setting | Description |
 |---------|-------------|
-| `LLM_API_KEY` | SiliconFlow API key |
-| `LLM_BASE_URL` | `https://api.siliconflow.cn/v1` |
-| `LLM_CHAT_MODEL` | `Qwen/Qwen2.5-72B-Instruct` |
+| `TEXT_API_KEY` | Agnes AI API key |
+| `TEXT_BASE_URL` | `https://apihub.agnes-ai.com` |
+| `TEXT_CHAT_MODEL` | `agnes-2.0-flash` |
 
 ## Example Usage
 

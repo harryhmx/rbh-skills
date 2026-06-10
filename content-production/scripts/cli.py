@@ -8,11 +8,11 @@ Usage:
     python scripts/cli.py caption -i <segments.json> -d <image-dir> [-o <dir>] [--font FONT] [--font-size N]
 
 Examples:
-    # Generate images from segments (default 512x512)
+    # Generate images from segments (default 1024x768)
     python scripts/cli.py image -i ucla-segments.json -o images/
 
     # Custom image size
-    python scripts/cli.py image -i ucla-segments.json -o images/ --size 1024x768
+    python scripts/cli.py image -i ucla-segments.json -o images/ --size 512x512
 
     # Generate speech from segments
     python scripts/cli.py speech -i ucla-segments.json -o audio/
@@ -52,7 +52,7 @@ def cmd_image(args: argparse.Namespace) -> None:
     # 2. Validate size format
     size = args.size
     if "x" not in size:
-        print("Error: --size must be in WxH format (e.g. 512x512)", file=sys.stderr)
+        print("Error: --size must be in WxH format (e.g. 1024x768)", file=sys.stderr)
         sys.exit(1)
 
     # 3. Generate images
@@ -159,8 +159,8 @@ def main() -> None:
     )
     image_parser.add_argument(
         "--size",
-        default="512x512",
-        help="Image size in WxH format (default: 512x512)",
+        default="1024x768",
+        help="Image size in WxH format (default: 1024x768)",
     )
     image_parser.add_argument(
         "--prompt-key",

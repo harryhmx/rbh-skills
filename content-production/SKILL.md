@@ -40,17 +40,17 @@ Trigger this skill when the user asks to:
 When invoked from Claude Code, Claude reads the segments JSON and runs the CLI:
 
 ```
-Generate images from ucla-segments.json, size 1024x768, save to images/
+Generate images from ucla-segments.json, size 512x512, save to images/
 ```
 
 ### Python CLI
 
 ```bash
-# Generate images from segments (default 512x512)
+# Generate images from segments (default 1024x768)
 python scripts/cli.py image -i ucla-segments.json -o images/
 
 # Custom image size
-python scripts/cli.py image -i ucla-segments.json -o images/ --size 1024x768
+python scripts/cli.py image -i ucla-segments.json -o images/ --size 512x512
 
 # Generate speech from segments
 python scripts/cli.py speech -i ucla-segments.json -o audio/
@@ -65,7 +65,7 @@ python scripts/cli.py caption -i ucla-segments.json -d images/ -o captioned/
 |----------|-------|-------------|---------|
 | `--input` | `-i` | Path to segments JSON file | (required) |
 | `--output` | `-o` | Output directory | `output/` |
-| `--size` | | Image size `WxH` (e.g. `1024x768`) | `512x512` |
+| `--size` | | Image size `WxH` (e.g. `512x512`) | `1024x768` |
 | `--prompt-key` | | Segment key for the image prompt | `image_prompt` |
 
 **CLI arguments (speech subcommand):**
@@ -95,7 +95,7 @@ python scripts/cli.py caption -i ucla-segments.json -d images/ -o captioned/
 python ../text-optimizer/scripts/cli.py split -i article.md --prompts -f json -o segments.json
 
 # Then, generate images
-python scripts/cli.py image -i segments.json -o images/ --size 1024x768
+python scripts/cli.py image -i segments.json -o images/ --size 512x512
 ```
 
 Output:
@@ -128,15 +128,18 @@ images/
 
 ## Configuration
 
-Uses the existing `skills/.env` configuration — no new env vars needed:
+Uses the `skills/.env` configuration:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LLM_API_KEY` | SiliconFlow API key | (from .env) |
-| `LLM_BASE_URL` | SiliconFlow API base URL | `https://api.siliconflow.com/v1` |
-| `LLM_IMAGE_MODEL` | Image generation model | `black-forest-labs/FLUX.2-pro` |
-| `LLM_SPEECH_MODEL` | Speech generation model | `fishaudio/fish-speech-1.5` |
-| `LLM_SPEECH_VOICE` | Speech voice preset | `fishaudio/fish-speech-1.5:anna` |
+| `IMAGE_API_KEY` | Agnes AI API key | (from .env) |
+| `IMAGE_BASE_URL` | Agnes AI API base URL | `https://apihub.agnes-ai.com` |
+| `IMAGE_MODEL` | Image generation model | `agnes-image-2.1-flash` |
+| `IMAGE_SIZE` | Default image size (WxH) | `1024x768` |
+| `SPEECH_API_KEY` | SiliconFlow API key | (from .env) |
+| `SPEECH_BASE_URL` | SiliconFlow API base URL | `https://api.siliconflow.com/v1` |
+| `SPEECH_MODEL` | Speech generation model | `fishaudio/fish-speech-1.5` |
+| `SPEECH_VOICE` | Speech voice preset | `fishaudio/fish-speech-1.5:anna` |
 
 ## Architecture
 
@@ -147,9 +150,9 @@ text-optimizer output (segments.json)
                 │
                 ├── image ──> generate_images()
                 │               │
-                │               └── OpenAI().images.generate()
+                │               └── POST /v1/images/generations
                 │                       │
-                │                       └── SiliconFlow Flux.2-pro
+                │                       └── Agnes AI (agnes-image-2.1-flash)
                 │                             → 000.png, 001.png, ...
                 │
                 ├── speech ─> generate_speech()

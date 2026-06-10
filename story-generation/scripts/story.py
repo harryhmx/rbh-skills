@@ -126,8 +126,8 @@ def generate_story(
     conclusion_prompt_override: str | None = None,
 ) -> dict:
     client = OpenAI(
-        api_key=settings.LLM_API_KEY,
-        base_url=settings.LLM_BASE_URL,
+        api_key=settings.TEXT_API_KEY,
+        base_url=f"{settings.TEXT_BASE_URL}/v1",
         timeout=60.0,
     )
     prompt = (
@@ -163,7 +163,7 @@ def generate_story(
         try:
             logger.info("[story] Generating... (attempt %d/3, conclusion=%s)", attempt, is_conclusion)
             response = client.chat.completions.create(
-                model=settings.LLM_CHAT_MODEL,
+                model=settings.TEXT_CHAT_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt},

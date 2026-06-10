@@ -17,11 +17,11 @@ No markdown, no extra text, no code fences."""
 
 def generate_project(prompt: str) -> dict:
     client = OpenAI(
-        api_key=settings.LLM_API_KEY,
-        base_url=settings.LLM_BASE_URL,
+        api_key=settings.TEXT_API_KEY,
+        base_url=f"{settings.TEXT_BASE_URL}/v1",
     )
     response = client.chat.completions.create(
-        model=settings.LLM_CHAT_MODEL,
+        model=settings.TEXT_CHAT_MODEL,
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": prompt},

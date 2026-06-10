@@ -228,9 +228,9 @@ The Python CLI requires these environment variables (from `skills/.env` or syste
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `LLM_API_KEY` | SiliconFlow API key | **Yes** |
-| `LLM_BASE_URL` | SiliconFlow API base URL | Default: `https://api.siliconflow.cn/v1` |
-| `LLM_CHAT_MODEL` | Model for splitting | Default: `Qwen/Qwen2.5-72B-Instruct` |
+| `TEXT_API_KEY` | Agnes AI API key | **Yes** |
+| `TEXT_BASE_URL` | Agnes AI API base URL | Default: `https://apihub.agnes-ai.com` |
+| `TEXT_CHAT_MODEL` | Model for splitting | Default: `agnes-2.0-flash` |
 
 **Native Claude Code requires no configuration** — Claude's built-in LLM handles everything.
 

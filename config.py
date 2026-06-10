@@ -11,13 +11,23 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""
     ALIBABA_CLOUD_ACCESS_KEY_ID: str = ""
     ALIBABA_CLOUD_ACCESS_KEY_SECRET: str = ""
-    LLM_API_KEY: str = ""
-    LLM_BASE_URL: str = "https://api.siliconflow.com/v1"
-    LLM_CHAT_MODEL: str = "Qwen/Qwen2.5-72B-Instruct"
-    LLM_IMAGE_MODEL: str = "black-forest-labs/FLUX.2-pro"
-    LLM_IMAGE_SIZE: str = "512x512"
-    LLM_SPEECH_MODEL: str = "fishaudio/fish-speech-1.5"
-    LLM_SPEECH_VOICE: str = "fishaudio/fish-speech-1.5:anna"
+
+    # Text generation (Agnes AI)
+    TEXT_API_KEY: str = ""
+    TEXT_BASE_URL: str = "https://apihub.agnes-ai.com"
+    TEXT_CHAT_MODEL: str = "agnes-2.0-flash"
+
+    # Image generation (Agnes AI)
+    IMAGE_API_KEY: str = ""
+    IMAGE_BASE_URL: str = "https://apihub.agnes-ai.com"
+    IMAGE_MODEL: str = "agnes-image-2.1-flash"
+    IMAGE_SIZE: str = "1024x768"
+
+    # Speech generation (SiliconFlow)
+    SPEECH_API_KEY: str = ""
+    SPEECH_BASE_URL: str = "https://api.siliconflow.com/v1"
+    SPEECH_MODEL: str = "fishaudio/fish-speech-1.5"
+    SPEECH_VOICE: str = "fishaudio/fish-speech-1.5:anna"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -29,7 +39,9 @@ class Settings(BaseSettings):
             ("SUPABASE_KEY", self.SUPABASE_KEY),
             ("ALIBABA_CLOUD_ACCESS_KEY_ID", self.ALIBABA_CLOUD_ACCESS_KEY_ID),
             ("ALIBABA_CLOUD_ACCESS_KEY_SECRET", self.ALIBABA_CLOUD_ACCESS_KEY_SECRET),
-            ("LLM_API_KEY", self.LLM_API_KEY),
+            ("TEXT_API_KEY", self.TEXT_API_KEY),
+            ("IMAGE_API_KEY", self.IMAGE_API_KEY),
+            ("SPEECH_API_KEY", self.SPEECH_API_KEY),
         ]
         missing = [name for name, val in required if not val.strip()]
         if missing:

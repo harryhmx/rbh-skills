@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
-LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.siliconflow.cn/v1")
-LLM_CHAT_MODEL = os.environ.get("LLM_CHAT_MODEL", "Qwen/Qwen2.5-72B-Instruct")
+TEXT_API_KEY = os.environ.get("TEXT_API_KEY", "")
+TEXT_BASE_URL = os.environ.get("TEXT_BASE_URL", "https://apihub.agnes-ai.com")
+TEXT_CHAT_MODEL = os.environ.get("TEXT_CHAT_MODEL", "agnes-2.0-flash")
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -88,9 +88,9 @@ def split_text(
     if not text:
         return []
 
-    if not LLM_API_KEY:
+    if not TEXT_API_KEY:
         raise RuntimeError(
-            "LLM_API_KEY is not set. "
+            "TEXT_API_KEY is not set. "
             "Set it in skills/.env or as an environment variable."
         )
 
@@ -109,14 +109,14 @@ _PROMPT_TYPE_SPECS: dict[str, dict[str, str]] = {
     "image": {
         "key": "image_prompt",
         "header": "## Image Generation Prompt (image_prompt)",
-        "body": """Create a detailed visual description suitable for AI image generation (Stable Diffusion, DALL·E, Midjourney, Flux).
+        "body": """Create a detailed visual description suitable for AI image generation.
 STRICT format:
 - 2-4 sentences in English describing the scene VISUALLY
 - Must include: main subjects, setting/background, key actions, facial expressions
-- Must specify art style: "colorful children's book illustration style, warm and inviting"
 - Must include: composition framing (close-up / wide shot / etc.), lighting direction and quality, dominant color palette (3-5 colors)
+- You may optionally specify an art style that matches the content (e.g. photorealistic, oil painting, editorial illustration, 3D render)
 - Focus ONLY on what can be drawn/illustrated — no abstract concepts, no text
-- Example: "A wide shot of a sunlit classroom with diverse young students raising their hands eagerly. Colorful children's book illustration style with warm golden lighting from large windows on the left. Composition centers on the teacher's desk in the foreground. Dominant colors: warm yellow, sky blue, cream white, soft green, and coral pink."
+- Example: "A wide shot of a modern office conference room with professionals seated around a long table, engaged in discussion. Editorial illustration style with natural lighting from floor-to-ceiling windows on the left. Composition centers on the presenter standing at the head of the table. Dominant colors: navy blue, warm gray, cream white, and brushed steel."
 """,
     },
     "video": {
@@ -128,7 +128,7 @@ STRICT format:
 - Must include: what HAPPENS visually over time (people move, objects change, scenes transform)
 - Must specify: one primary camera movement (slow pan right / gentle zoom in / tracking shot following subject / static with internal motion)
 - Must describe: pacing (slow and gentle / energetic and quick) and any transition at the start/end (fade in from black / cut to next scene)
-- Example: "Fade in from black to a wide classroom shot. The camera slowly pans right across rows of students, each raising their hand one after another in a gentle wave motion. A teacher at the front nods encouragingly as each hand goes up. Slow, gentle pacing with warm atmosphere. Fade out as the last hand rises."
+- Example: "Fade in from black to a wide shot of a modern conference room. The camera slowly pans right across attendees seated around a table, each nodding in turn as a point is made. A presenter at the front gestures toward a projected chart. Slow, professional pacing with natural atmosphere. Fade out as the discussion concludes."
 """,
     },
     "tts": {
@@ -162,10 +162,9 @@ def _build_prompts_template(types: frozenset[str]) -> str:
     keys_list = ", ".join(return_keys)
 
     header = (
-        f"You are a creative content producer for a children's educational "
-        f"platform (ages 6-12). Below are {{count}} text segments. For EACH "
-        f"segment, generate {type_list} prompt(s) following the STRICT format "
-        f"requirements below."
+        f"You are a professional creative content producer. Below are {{count}} "
+        f"text segments. For EACH segment, generate {type_list} prompt(s) "
+        f"following the STRICT format requirements below."
     )
 
     footer = (
@@ -216,9 +215,9 @@ def generate_prompts(
             f"Valid types: {sorted(ALL_PROMPT_TYPES)}"
         )
 
-    if not LLM_API_KEY:
+    if not TEXT_API_KEY:
         raise RuntimeError(
-            "LLM_API_KEY is not set. "
+            "TEXT_API_KEY is not set. "
             "Set it in skills/.env or as an environment variable."
         )
 
@@ -239,13 +238,13 @@ def generate_prompts(
 
     try:
         resp = requests.post(
-            f"{LLM_BASE_URL}/chat/completions",
+            f"{TEXT_BASE_URL}/v1/chat/completions",
             headers={
-                "Authorization": f"Bearer {LLM_API_KEY}",
+                "Authorization": f"Bearer {TEXT_API_KEY}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": LLM_CHAT_MODEL,
+                "model": TEXT_CHAT_MODEL,
                 "messages": [
                     {
                         "role": "system",
@@ -274,12 +273,30 @@ def generate_prompts(
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw)
 
+    # Try standard JSON array first, then fall back to concatenated objects
     try:
         prompts_list = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            f"AI returned non-JSON response for prompts. Raw: {raw[:300]}..."
-        ) from exc
+    except json.JSONDecodeError:
+        # Some models return concatenated JSON objects instead of an array
+        prompts_list = []
+        decoder = json.JSONDecoder()
+        pos = 0
+        raw_stripped = raw.strip()
+        while pos < len(raw_stripped):
+            while pos < len(raw_stripped) and raw_stripped[pos] in " \t\n\r":
+                pos += 1
+            if pos >= len(raw_stripped):
+                break
+            try:
+                obj, end = decoder.raw_decode(raw_stripped, pos)
+                prompts_list.append(obj)
+                pos = end
+            except json.JSONDecodeError:
+                break
+        if not prompts_list:
+            raise RuntimeError(
+                f"AI returned non-JSON response for prompts. Raw: {raw[:300]}..."
+            )
 
     if not isinstance(prompts_list, list):
         raise RuntimeError(
@@ -403,13 +420,13 @@ def _ai_split(
 
     try:
         resp = requests.post(
-            f"{LLM_BASE_URL}/chat/completions",
+            f"{TEXT_BASE_URL}/v1/chat/completions",
             headers={
-                "Authorization": f"Bearer {LLM_API_KEY}",
+                "Authorization": f"Bearer {TEXT_API_KEY}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": LLM_CHAT_MODEL,
+                "model": TEXT_CHAT_MODEL,
                 "messages": [
                     {
                         "role": "system",

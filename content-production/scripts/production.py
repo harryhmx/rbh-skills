@@ -1,9 +1,8 @@
 """
 Content Production — generate images and speech from text-optimizer segments.
 
-Uses the OpenAI-compatible SiliconFlow API (same keys as text-optimizer).
-Images: Flux.2-pro via ``client.images.generate()``.
-Speech: Fish Speech via ``client.audio.speech.create()`` (v0.2).
+Images: Agnes AI (``agnes-image-2.1-flash``) via ``POST /v1/images/generations``.
+Speech: Fish Speech via SiliconFlow OpenAI-compatible endpoint.
 """
 
 from __future__ import annotations
@@ -12,8 +11,9 @@ import json
 import logging
 import os
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
-from typing import Optional
 
 import requests as http_requests
 from dotenv import load_dotenv
@@ -29,12 +29,17 @@ logger = logging.getLogger(__name__)
 # Configuration (from skills/.env)
 # ---------------------------------------------------------------------------
 
-LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
-LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.siliconflow.com/v1")
-LLM_IMAGE_MODEL = os.environ.get("LLM_IMAGE_MODEL", "black-forest-labs/FLUX.2-pro")
-LLM_IMAGE_SIZE_DEFAULT = os.environ.get("LLM_IMAGE_SIZE", "512x512")
-LLM_SPEECH_MODEL = os.environ.get("LLM_SPEECH_MODEL", "fishaudio/fish-speech-1.5")
-LLM_SPEECH_VOICE = os.environ.get("LLM_SPEECH_VOICE", "fishaudio/fish-speech-1.5:anna")
+# Agnes AI image generation
+IMAGE_API_KEY = os.environ.get("IMAGE_API_KEY", "")
+IMAGE_BASE_URL = os.environ.get("IMAGE_BASE_URL", "https://apihub.agnes-ai.com")
+IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "agnes-image-2.1-flash")
+IMAGE_SIZE_DEFAULT = os.environ.get("IMAGE_SIZE", "1024x768")
+
+# Speech (SiliconFlow)
+SPEECH_API_KEY = os.environ.get("SPEECH_API_KEY", "")
+SPEECH_BASE_URL = os.environ.get("SPEECH_BASE_URL", "https://api.siliconflow.com/v1")
+SPEECH_MODEL = os.environ.get("SPEECH_MODEL", "fishaudio/fish-speech-1.5")
+SPEECH_VOICE = os.environ.get("SPEECH_VOICE", "fishaudio/fish-speech-1.5:anna")
 
 MAX_RETRIES = 2
 
@@ -52,13 +57,52 @@ def load_segments_json(path: str | Path) -> list[dict]:
     return segments
 
 
+def _agnes_image_request(payload: dict) -> dict:
+    """Send a JSON request to the Agnes AI images endpoint."""
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        f"{IMAGE_BASE_URL}/v1/images/generations",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {IMAGE_API_KEY}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            text = resp.read().decode("utf-8")
+            return json.loads(text) if text else {}
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Agnes HTTP {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Agnes request failed: {exc}") from exc
+
+
+def _extract_image_urls(data: dict) -> list[str]:
+    """Extract image URLs from an Agnes API response."""
+    urls: list[str] = []
+    if isinstance(data.get("url"), str):
+        urls.append(data["url"])
+    if isinstance(data.get("image_url"), str):
+        urls.append(data["image_url"])
+    if isinstance(data.get("data"), list):
+        for item in data["data"]:
+            if isinstance(item, dict):
+                for key in ("url", "image_url"):
+                    if isinstance(item.get(key), str):
+                        urls.append(item[key])
+    return urls
+
+
 def generate_images(
     segments: list[dict],
-    size: str = LLM_IMAGE_SIZE_DEFAULT,
+    size: str = IMAGE_SIZE_DEFAULT,
     output_dir: str | Path = "output",
     prompt_key: str = "image_prompt",
 ) -> list[dict]:
-    """Generate an image for each segment using SiliconFlow Flux.2-pro.
+    """Generate an image for each segment using Agnes AI (agnes-image-2.1-flash).
 
     Images are saved to *output_dir* as ``{index:03d}.png`` in index order.
 
@@ -81,20 +125,14 @@ def generate_images(
         Each dict has ``index``, ``title``, ``file_path``, ``url``, and
         ``prompt`` keys.
     """
-    if not LLM_API_KEY:
+    if not IMAGE_API_KEY:
         raise RuntimeError(
-            "LLM_API_KEY is not set. "
+            "IMAGE_API_KEY is not set. "
             "Set it in skills/.env or as an environment variable."
         )
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-
-    client = OpenAI(
-        api_key=LLM_API_KEY,
-        base_url=LLM_BASE_URL,
-        timeout=120.0,
-    )
 
     results = []
     total = len(segments)
@@ -126,22 +164,22 @@ def generate_images(
                     idx + 1, total, title, attempt, MAX_RETRIES,
                 )
 
-                response = client.images.generate(
-                    model=LLM_IMAGE_MODEL,
-                    prompt=prompt,
-                    size=size,
-                    n=1,
-                )
+                payload: dict = {
+                    "model": IMAGE_MODEL,
+                    "prompt": prompt,
+                    "extra_body": {"response_format": "url"},
+                }
+                if size:
+                    payload["size"] = size
 
-                if not response.data or not hasattr(response.data[0], "url"):
-                    logger.warning("Empty response from image API")
+                data = _agnes_image_request(payload)
+                urls = _extract_image_urls(data)
+
+                if not urls:
+                    logger.warning("No image URL in Agnes response")
                     continue
 
-                image_url = response.data[0].url
-                if not image_url:
-                    logger.warning("API returned empty URL")
-                    continue
-
+                image_url = urls[0]
                 logger.info("[%d/%d] Downloading from %s...", idx + 1, total, image_url[:80])
 
                 img_res = http_requests.get(image_url, timeout=60)
@@ -192,9 +230,9 @@ def generate_speech(
        This is a v0.2 feature — currently a stub that will be implemented
        following the same pattern as :func:`generate_images`.
     """
-    if not LLM_API_KEY:
+    if not SPEECH_API_KEY:
         raise RuntimeError(
-            "LLM_API_KEY is not set. "
+            "SPEECH_API_KEY is not set. "
             "Set it in skills/.env or as an environment variable."
         )
 
@@ -202,8 +240,8 @@ def generate_speech(
     out.mkdir(parents=True, exist_ok=True)
 
     client = OpenAI(
-        api_key=LLM_API_KEY,
-        base_url=LLM_BASE_URL,
+        api_key=SPEECH_API_KEY,
+        base_url=SPEECH_BASE_URL,
     )
 
     results = []
@@ -237,8 +275,8 @@ def generate_speech(
                     clean_text = clean_text.split(")", 1)[1].strip()
 
                 response = client.audio.speech.create(
-                    model=LLM_SPEECH_MODEL,
-                    voice=LLM_SPEECH_VOICE,
+                    model=SPEECH_MODEL,
+                    voice=SPEECH_VOICE,
                     input=clean_text,
                 )
 

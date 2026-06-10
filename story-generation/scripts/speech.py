@@ -28,8 +28,8 @@ def generate_speech(story_title: str, story_content: str, story_id: str | None =
         story_id = str(uuid.uuid4())
 
     client = OpenAI(
-        api_key=settings.LLM_API_KEY,
-        base_url=settings.LLM_BASE_URL,
+        api_key=settings.SPEECH_API_KEY,
+        base_url=settings.SPEECH_BASE_URL,
     )
 
     text = f"{story_title}. {story_content}" if story_content else story_title
@@ -37,8 +37,8 @@ def generate_speech(story_title: str, story_content: str, story_id: str | None =
 
     logger.info("[speech] Generating...")
     response = client.audio.speech.create(
-        model=settings.LLM_SPEECH_MODEL,
-        voice=settings.LLM_SPEECH_VOICE,
+        model=settings.SPEECH_MODEL,
+        voice=settings.SPEECH_VOICE,
         input=text,
     )
 
