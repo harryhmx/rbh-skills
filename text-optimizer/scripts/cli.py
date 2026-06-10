@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""CLI entry point for text-optimizer — AI-powered semantic text splitting
-and image/video/TTS prompt generation.
+"""CLI entry point for text-optimizer — AI-powered semantic text splitting,
+prompt generation for segments, and single image/video prompt generation.
 
 Usage:
     python scripts/cli.py split -i <text-or-file> [-n <count>] [-f json|md|text] [-o <path>] [--max-words N] [--max-chars N] [--prompts] [--prompt-types image,video,tts]
     python scripts/cli.py prompts -i <segments.json> [-o <path>] [--prompt-types image,video,tts]
+    python scripts/cli.py genprompt -i <text-or-file> -t image|video [-o <path>] [--size WxH] [--num-frames N] [--frame-rate FPS]
 
 Examples:
     # Auto segment count, print JSON to stdout
@@ -24,6 +25,15 @@ Examples:
 
     # Generate prompts from existing segments JSON
     python scripts/cli.py prompts -i segments.json -o prompts.json
+
+    # Generate a single image prompt from text
+    python scripts/cli.py genprompt -i article.md -t image -o my-image-prompt.md
+
+    # Generate a single video prompt, print to stdout
+    python scripts/cli.py genprompt -t video -i "A physics lecture explaining quantum mechanics"
+
+    # Generate video prompt with custom settings
+    python scripts/cli.py genprompt -i article.md -t video --size 1920x1080 --num-frames 241 --frame-rate 30
 """
 
 from __future__ import annotations
@@ -39,7 +49,9 @@ if str(_skill_dir) not in sys.path:
 
 from scripts.optimizer import (  # noqa: E402
     format_output,
+    format_prompt_file,
     generate_prompts,
+    generate_single_prompt,
     read_input,
     split_text,
 )
@@ -164,9 +176,53 @@ def cmd_prompts(args: argparse.Namespace) -> None:
         print(output)
 
 
+def cmd_genprompt(args: argparse.Namespace) -> None:
+    """Handle the ``genprompt`` subcommand — generate a single image/video prompt."""
+    # 1. Read input
+    source = args.input
+    if source is None:
+        print("Error: --input is required", file=sys.stderr)
+        sys.exit(1)
+
+    text = read_input(source)
+    if not text.strip():
+        print("Error: input text is empty", file=sys.stderr)
+        sys.exit(1)
+
+    # 2. Generate single prompt via AI
+    try:
+        prompt_text = generate_single_prompt(
+            text,
+            prompt_type=args.type,
+            size=args.size,
+            num_frames=args.num_frames,
+            frame_rate=args.frame_rate,
+        )
+    except (RuntimeError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    # 3. Format in proprietary prompt file format
+    output = format_prompt_file(
+        prompt_text,
+        prompt_type=args.type,
+        size=args.size,
+        num_frames=args.num_frames,
+        frame_rate=args.frame_rate,
+    )
+
+    # 4. Output
+    if args.output:
+        out_path = Path(args.output)
+        out_path.write_text(output, encoding="utf-8")
+        print(f"Output written to: {out_path.resolve()}", file=sys.stderr)
+    else:
+        print(output)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Text Optimizer — AI-powered semantic text splitting",
+        description="Text Optimizer — AI-powered semantic text splitting and prompt generation",
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -235,12 +291,51 @@ def main() -> None:
         help="Prompt types to generate: image,video,tts (comma-separated, or 'all'). Default: all",
     )
 
+    # ---- genprompt ----
+    genprompt_parser = subparsers.add_parser(
+        "genprompt",
+        help="Generate a single image or video prompt from text (writes proprietary format for content-production)",
+    )
+    genprompt_parser.add_argument(
+        "-i", "--input",
+        help="Raw text string or path to .md/.txt file",
+    )
+    genprompt_parser.add_argument(
+        "-t", "--type",
+        required=True,
+        choices=["image", "video"],
+        help="Prompt type: 'image' or 'video'",
+    )
+    genprompt_parser.add_argument(
+        "-o", "--output",
+        help="Output file path (.md or .txt). Omit to print to stdout.",
+    )
+    genprompt_parser.add_argument(
+        "--size",
+        default="1024x768",
+        help="Target size in WxH format (default: 1024x768)",
+    )
+    genprompt_parser.add_argument(
+        "--num-frames",
+        type=int,
+        default=121,
+        help="Number of frames — video only (default: 121)",
+    )
+    genprompt_parser.add_argument(
+        "--frame-rate",
+        type=float,
+        default=24,
+        help="Frame rate in FPS — video only (default: 24)",
+    )
+
     args = parser.parse_args()
 
     if args.command == "split":
         cmd_split(args)
     elif args.command == "prompts":
         cmd_prompts(args)
+    elif args.command == "genprompt":
+        cmd_genprompt(args)
     else:
         parser.print_help()
         sys.exit(1)

@@ -1,7 +1,7 @@
 ---
 name: text-optimizer
-description: "Split long text into semantically coherent segments for content production. Accepts raw text or file input (md/txt), outputs structured segments with optional image/video/TTS prompts. Use when preparing articles, stories, or long-form content for multi-segment publishing, when asked to 'split this article into parts', 'break this text into sections', or 'segment this content for processing'."
-version: "0.1.0"
+description: "Split long text into semantically coherent segments for content production, or generate single image/video prompts from text. Accepts raw text or file input (md/txt), outputs structured segments with optional image/video/TTS prompts, or outputs a single prompt in proprietary format for content-production. Use when preparing articles, stories, or long-form content for multi-segment publishing, when asked to 'split this article into parts', 'break this text into sections', 'generate a prompt for this text', or 'create an image/video prompt from this article'."
+version: "0.2.0"
 allowed-tools: ["Bash", "Read", "Write"]
 ---
 
@@ -18,6 +18,7 @@ Splits long text into semantically coherent segments — the entry point of the 
 3. **Condenses** segments to fit within word/character limits (when specified)
 4. **Outputs** structured segments as JSON, Markdown, or plain text
 5. **Generates** (optionally) image/video/TTS prompts with strict format requirements for each medium — feeding into `content-production`
+6. **Generates single prompts** — transform any text into a single image or video prompt, output in a proprietary format that `content-production single` can consume directly
 
 ### Splitting principles
 
@@ -35,6 +36,9 @@ Trigger this skill when the user asks to:
 - "Prepare this article for content production"
 - "Chunk this text for processing"
 - Read a `.md` or `.txt` file and split its contents
+- "Generate a prompt for this text" (single image/video prompt)
+- "Create an image prompt from this article"
+- "Turn this into a video prompt"
 
 ## When NOT to use it
 
@@ -126,6 +130,46 @@ python scripts/cli.py prompts -i segments.json --prompt-types tts
 | `--input` | `-i` | Path to segments JSON file (from `split` command) | (required) |
 | `--output` | `-o` | Output file path (omit to print to stdout) | `None` (stdout) |
 | `--prompt-types` | | Comma-separated prompt types: `image`, `video`, `tts`, or `all` | `all` |
+
+### `genprompt` subcommand — single prompt generation
+
+Generate a single image or video prompt from raw text or file content. The output uses a proprietary YAML-like frontmatter format that `content-production single` can consume.
+
+```bash
+# Generate a single image prompt to stdout
+python scripts/cli.py genprompt -t image -i "A classroom scene with students"
+
+# Generate from a file, save to output
+python scripts/cli.py genprompt -t image -i article.md -o my-image-prompt.md
+
+# Generate a single video prompt from file content
+python scripts/cli.py genprompt -t video -i article.md -o my-video-prompt.md
+
+# Video with custom settings
+python scripts/cli.py genprompt -t video -i article.md --size 1920x1080 --num-frames 241 --frame-rate 30
+```
+
+**Output format (proprietary RBH prompt file):**
+
+```markdown
+---
+type: image
+size: 1024x768
+---
+
+A wide shot of a sunlit classroom with students engaged...
+```
+
+Video prompt files additionally include `num_frames` and `frame_rate` frontmatter keys.
+
+| Argument | Short | Description | Default |
+|----------|-------|-------------|---------|
+| `--input` | `-i` | Raw text string or path to .md/.txt file | (required) |
+| `--type` | `-t` | Prompt type: `image` or `video` | (required) |
+| `--output` | `-o` | Output file path (.md/.txt). Omit to print to stdout. | `None` (stdout) |
+| `--size` | | Target size `WxH` | `1024x768` |
+| `--num-frames` | | Number of frames (video only) | `121` |
+| `--frame-rate` | | Frame rate in FPS (video only) | `24` |
 
 ### Segment length control
 
@@ -244,7 +288,7 @@ User Input (text / file + requirements: segments, max_words, max_chars)
         │
         └── CLI (scripts/cli.py)
                 │
-                ├── split ──> _ai_split() ──> ONE prompt to SiliconFlow API
+                ├── split ──> _ai_split() ──> ONE prompt to Agnes AI
                 │                    │           full text + segment count + limits
                 │                    │           returns: finished segments
                 │                    │
@@ -254,13 +298,21 @@ User Input (text / file + requirements: segments, max_words, max_chars)
                 │                                              image/video/TTS prompts
                 │                                              for all segments at once
                 │
-                └── prompts ──> generate_prompts() ──> process existing
-                                 segments JSON → add prompt fields
+                ├── prompts ──> generate_prompts() ──> process existing
+                │                 segments JSON → add prompt fields
+                │
+                └── genprompt ──> generate_single_prompt()
+                                       │
+                                       └── ONE prompt → AI returns
+                                           single image or video prompt
+                                           └── format_prompt_file()
+                                                 └── proprietary .md/.txt
+                                                     → content-production single
 ```
 
 ## Output consumed by
 
-- **content-production (A2)**: receives segments + prompts for image/video/audio generation
+- **content-production (A2)**: receives segments + prompts for image/video/audio generation via `segments.json`, OR receives single prompt files (`.md`/`.txt`) via the proprietary `genprompt` format for single image/video generation
 - **Direct publishing**: Markdown output published directly to RBH Agent Blog/Skills pages
 - **Programmatic processing**: JSON output for downstream automation
 

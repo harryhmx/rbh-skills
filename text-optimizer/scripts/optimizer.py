@@ -325,6 +325,152 @@ def generate_prompts(
     return segments
 
 
+# ---------------------------------------------------------------------------
+# Single prompt generation — produce ONE image or video prompt from raw text
+# ---------------------------------------------------------------------------
+
+_SINGLE_PROMPT_TEMPLATE = """You are a professional creative content producer.
+
+Given the following text, create a SINGLE {prompt_type} generation prompt following these STRICT format requirements:
+
+{format_spec}
+
+## Source text to transform
+
+{text}
+
+Return ONLY the prompt text itself — no markdown fences, no JSON wrapper, no "here is your prompt" prefix, no explanations. Just the raw prompt, 2-4 sentences in English."""
+
+
+def generate_single_prompt(
+    text: str,
+    prompt_type: str,
+    size: str = "1024x768",
+    num_frames: int = 121,
+    frame_rate: float = 24,
+) -> str:
+    """Generate a single image or video prompt from *text* via AI.
+
+    Parameters
+    ----------
+    text : str
+        The source text to transform into a prompt.
+    prompt_type : str
+        ``"image"`` or ``"video"``.
+    size : str
+        Target size in ``WxH`` format (informational, included in output metadata).
+    num_frames : int
+        Number of frames (video only, for metadata).
+    frame_rate : float
+        Frame rate in FPS (video only, for metadata).
+
+    Returns
+    -------
+    str
+        The AI-generated prompt text (2-4 sentences in English).
+    """
+    if prompt_type not in ("image", "video"):
+        raise ValueError(f"Unknown prompt_type '{prompt_type}'. Must be 'image' or 'video'.")
+
+    if not TEXT_API_KEY:
+        raise RuntimeError(
+            "TEXT_API_KEY is not set. "
+            "Set it in skills/.env or as an environment variable."
+        )
+
+    spec = _PROMPT_TYPE_SPECS[prompt_type]
+    format_spec = spec["body"]
+
+    prompt = _SINGLE_PROMPT_TEMPLATE.format(
+        prompt_type=prompt_type,
+        format_spec=format_spec,
+        text=text.strip(),
+    )
+
+    try:
+        resp = requests.post(
+            f"{TEXT_BASE_URL}/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {TEXT_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": TEXT_CHAT_MODEL,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a professional creative content producer. "
+                            "Return ONLY the raw prompt text — no markdown fences, "
+                            "no JSON wrapper, no prefix, no explanations."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.7,
+                "max_tokens": 2048,
+            },
+            timeout=120,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Single prompt generation API call failed: {exc}") from exc
+
+    raw = body["choices"][0]["message"]["content"].strip()
+
+    # Strip any markdown fences or common prefixes
+    raw = re.sub(r"^```(?:.*)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+    # Strip common "here is your prompt" prefixes
+    raw = re.sub(r"(?i)^(here\s+is\s+(your\s+)?(the\s+)?)?(image|video)\s+(generation\s+)?prompt\s*[:：\-—]\s*", "", raw)
+    raw = raw.strip()
+
+    logger.info("Generated %s prompt (%d chars)", prompt_type, len(raw))
+    return raw
+
+
+def format_prompt_file(
+    prompt_text: str,
+    prompt_type: str,
+    size: str = "1024x768",
+    num_frames: int = 121,
+    frame_rate: float = 24,
+) -> str:
+    """Wrap *prompt_text* in the proprietary RBH prompt file format.
+
+    Produces a YAML-like frontmatter block followed by the prompt text.
+    This format is consumed by ``content-production single``.
+
+    Parameters
+    ----------
+    prompt_text : str
+        The generated prompt content.
+    prompt_type : str
+        ``"image"`` or ``"video"``.
+    size : str
+        Target size in ``WxH`` format.
+    num_frames : int
+        Number of frames (video only).
+    frame_rate : float
+        Frame rate in FPS (video only).
+
+    Returns
+    -------
+    str
+        Formatted prompt file content.
+    """
+    lines = ["---", f"type: {prompt_type}", f"size: {size}"]
+    if prompt_type == "video":
+        lines.append(f"num_frames: {num_frames}")
+        lines.append(f"frame_rate: {frame_rate}")
+    lines.append("---")
+    lines.append("")
+    lines.append(prompt_text)
+    lines.append("")
+    return "\n".join(lines)
+
+
 def format_output(segments: list[dict], fmt: str) -> str:
     """Render segments as *fmt* (``"json"``, ``"md"``, or ``"text"``)."""
     if fmt == "json":
