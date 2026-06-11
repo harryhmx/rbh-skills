@@ -471,6 +471,203 @@ def format_prompt_file(
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Multi-prompt generation — produce MULTIPLE image or video prompt versions
+# from raw text, output as segments JSON compatible with content-production
+# ---------------------------------------------------------------------------
+
+_MULTI_PROMPT_TEMPLATE = """You are a professional creative content producer.
+
+Given the following text, create {count} DIFFERENT {prompt_type} generation prompts. Each prompt must approach the content from a UNIQUE creative angle — vary the composition, visual style, mood, lighting, or key visual metaphor. No two prompts should be similar.
+
+{format_spec}
+
+## Source text to transform
+
+{text}
+
+Return ONLY a valid JSON array of {count} objects. Each object must have:
+- "title": a short label describing this version's creative angle (2-5 words in English, e.g. "Wide cinematic shot", "Close-up intimate", "Abstract geometric")
+- "{prompt_key}": the prompt text (2-4 sentences in English)
+
+No markdown fences, no other text, no explanations."""
+
+
+def generate_multiple_prompts(
+    text: str,
+    prompt_type: str,
+    count: int = 4,
+    size: str = "1024x768",
+    num_frames: int = 121,
+    frame_rate: float = 24,
+) -> list[dict]:
+    """Generate *count* different image or video prompt versions from *text* via AI.
+
+    Sends ONE AI call requesting *count* unique prompt variations, each with
+    a different creative angle.  The result is formatted as segments compatible
+    with ``content-production image`` / ``content-production video`` batch
+    commands.
+
+    Parameters
+    ----------
+    text : str
+        The source text to transform into prompts.
+    prompt_type : str
+        ``"image"`` or ``"video"``.
+    count : int
+        Number of prompt versions to generate (default 4, min 2, max 10).
+    size : str
+        Target size in ``WxH`` format (metadata only).
+    num_frames : int
+        Number of frames (video only, metadata).
+    frame_rate : float
+        Frame rate in FPS (video only, metadata).
+
+    Returns
+    -------
+    list[dict]
+        List of segment dicts, each with ``index``, ``title``, ``image_prompt``
+        or ``video_prompt``, ``word_count``, ``char_count``.
+        Ready to be wrapped in ``{{"total_segments": N, "segments": [...]}}``
+        and consumed by content-production batch commands.
+    """
+    if prompt_type not in ("image", "video"):
+        raise ValueError(
+            f"Unknown prompt_type '{prompt_type}'. Must be 'image' or 'video'."
+        )
+
+    if count < 2:
+        raise ValueError("count must be at least 2 (use genprompt for single prompts)")
+    if count > 10:
+        raise ValueError("count must be at most 10")
+
+    if not TEXT_API_KEY:
+        raise RuntimeError(
+            "TEXT_API_KEY is not set. "
+            "Set it in skills/.env or as an environment variable."
+        )
+
+    spec = _PROMPT_TYPE_SPECS[prompt_type]
+    prompt_key = spec["key"]
+    format_spec = spec["body"]
+
+    prompt = _MULTI_PROMPT_TEMPLATE.format(
+        count=count,
+        prompt_type=prompt_type,
+        prompt_key=prompt_key,
+        format_spec=format_spec,
+        text=text.strip(),
+    )
+
+    try:
+        resp = requests.post(
+            f"{TEXT_BASE_URL}/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {TEXT_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": TEXT_CHAT_MODEL,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a professional creative content producer. "
+                            "Return ONLY valid JSON array — no markdown fences, "
+                            "no explanations, no other text."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.8,
+                "max_tokens": 4096,
+            },
+            timeout=180,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"Multi-prompt generation API call failed: {exc}"
+        ) from exc
+
+    raw = body["choices"][0]["message"]["content"].strip()
+
+    # Strip markdown code fences if present
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+
+    try:
+        items = json.loads(raw)
+    except json.JSONDecodeError:
+        # Fallback: try concatenated objects
+        items = []
+        decoder = json.JSONDecoder()
+        pos = 0
+        while pos < len(raw):
+            while pos < len(raw) and raw[pos] in " \t\n\r":
+                pos += 1
+            if pos >= len(raw):
+                break
+            try:
+                obj, end = decoder.raw_decode(raw, pos)
+                items.append(obj)
+                pos = end
+            except json.JSONDecodeError:
+                break
+        if not items:
+            raise RuntimeError(
+                f"AI returned non-JSON response for multi-prompts. "
+                f"Raw: {raw[:300]}..."
+            )
+
+    if not isinstance(items, list):
+        raise RuntimeError(
+            f"Expected JSON array, got {type(items).__name__}"
+        )
+
+    # Build segment dicts compatible with content-production
+    segments = []
+    for idx, item in enumerate(items):
+        title = item.get("title", f"Version {idx + 1}") if isinstance(item, dict) else f"Version {idx + 1}"
+        prompt_text = item.get(prompt_key, "") if isinstance(item, dict) else str(item)
+        seg = {
+            "index": idx,
+            "title": title.strip() if isinstance(title, str) else f"Version {idx + 1}",
+            "text": "",
+            "word_count": 0,
+            "char_count": 0,
+            prompt_key: prompt_text.strip() if isinstance(prompt_text, str) else str(prompt_text),
+        }
+        segments.append(seg)
+
+    # Trim or pad to exact count
+    if len(segments) > count:
+        segments = segments[:count]
+    elif len(segments) < count:
+        logger.warning(
+            "AI returned %d versions, expected %d — padding with duplicates",
+            len(segments), count,
+        )
+        while len(segments) < count:
+            last = segments[-1] if segments else {"title": f"Version {len(segments) + 1}", prompt_key: ""}
+            segments.append({
+                "index": len(segments),
+                "title": f"Version {len(segments) + 1}",
+                "text": "",
+                "word_count": 0,
+                "char_count": 0,
+                prompt_key: last.get(prompt_key, ""),
+            })
+
+    logger.info(
+        "Generated %d %s prompt versions (%d total chars)",
+        len(segments), prompt_type,
+        sum(len(s.get(prompt_key, "")) for s in segments),
+    )
+    return segments
+
+
 def format_output(segments: list[dict], fmt: str) -> str:
     """Render segments as *fmt* (``"json"``, ``"md"``, or ``"text"``)."""
     if fmt == "json":

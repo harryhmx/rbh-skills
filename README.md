@@ -9,7 +9,7 @@ Backend skills for the RBH Agent learning platform. Each skill is an independent
 | **sms-auth** | API | SMS verification for authentication (send + verify) |
 | **story-generation** | API | AI-powered story generation with branching support based on Critical Thinking answers |
 | **project-creation** | Internal | Generate Project model data and sync to Supabase (Claude Code only) |
-| **text-optimizer** | Agent Skill | Split long text into semantically coherent segments with optional image/video/TTS prompt generation, or generate single image/video prompts from text |
+| **text-optimizer** | Agent Skill | Split long text into semantically coherent segments with optional image/video/TTS prompt generation, or generate single/multiple image/video prompts from text (multi-version JSON for batch production) |
 | **content-production** | Agent Skill | Generate images/video via Agnes AI, speech via Fish Speech, caption images, and produce single assets from prompt files |
 | **video-converter** | Agent Skill | Composite images + audio into MP4 video segments, then concatenate into a final video |
 
@@ -31,7 +31,7 @@ RBH Agent Frontend (Next.js, Vercel)
     └──> Supabase (PostgreSQL)
          ↑
     Claude Code ──> project-creation (Internal Skill)
-                    text-optimizer     (Agent Skill → content production pipeline, single prompt gen)
+                    text-optimizer     (Agent Skill → content production pipeline, single + multi prompt gen)
                     content-production (Agent Skill → image/video/speech generation)
                     video-converter    (Agent Skill → video compositing + concat)
 ```

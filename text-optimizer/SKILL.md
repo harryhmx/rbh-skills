@@ -1,7 +1,7 @@
 ---
 name: text-optimizer
-description: "Split long text into semantically coherent segments for content production, or generate single image/video prompts from text. Accepts raw text or file input (md/txt), outputs structured segments with optional image/video/TTS prompts, or outputs a single prompt in proprietary format for content-production. Use when preparing articles, stories, or long-form content for multi-segment publishing, when asked to 'split this article into parts', 'break this text into sections', 'generate a prompt for this text', or 'create an image/video prompt from this article'."
-version: "0.2.0"
+description: "Split long text into semantically coherent segments for content production, or generate single/multiple image/video prompts from text. Accepts raw text or file input (md/txt), outputs structured segments with optional image/video/TTS prompts, or outputs single prompt in proprietary format, or outputs multiple prompt versions as JSON for content-production batch processing. Use when preparing articles, stories, or long-form content for multi-segment publishing, when asked to 'split this article into parts', 'break this text into sections', 'generate a prompt for this text', 'create multiple image prompts from this article', or 'create an image/video prompt from this article'."
+version: "0.3.0"
 allowed-tools: ["Bash", "Read", "Write"]
 ---
 
@@ -19,6 +19,7 @@ Splits long text into semantically coherent segments — the entry point of the 
 4. **Outputs** structured segments as JSON, Markdown, or plain text
 5. **Generates** (optionally) image/video/TTS prompts with strict format requirements for each medium — feeding into `content-production`
 6. **Generates single prompts** — transform any text into a single image or video prompt, output in a proprietary format that `content-production single` can consume directly
+7. **Generates multiple prompt versions** — transform any text into N different image or video prompt versions (default 4), each with a unique creative angle, output as JSON that `content-production image/video` batch commands can consume directly
 
 ### Splitting principles
 
@@ -39,6 +40,8 @@ Trigger this skill when the user asks to:
 - "Generate a prompt for this text" (single image/video prompt)
 - "Create an image prompt from this article"
 - "Turn this into a video prompt"
+- "Generate multiple prompts for this text" (N versions, JSON output)
+- "Create several image prompt variations"
 
 ## When NOT to use it
 
@@ -78,6 +81,14 @@ Split /path/to/article.md into 4 segments
 - No mid-sentence splits
 - Logical flow preserved
 - When condensing: key facts, tone, and core message are preserved
+
+### Python Environment
+
+Activate the shared virtual environment before running any Python CLI commands:
+
+```bash
+source ../.venv/bin/activate
+```
 
 ### Python CLI (for other Agents, batch processing, and REST API wrapping)
 
@@ -167,6 +178,55 @@ Video prompt files additionally include `num_frames` and `frame_rate` frontmatte
 | `--input` | `-i` | Raw text string or path to .md/.txt file | (required) |
 | `--type` | `-t` | Prompt type: `image` or `video` | (required) |
 | `--output` | `-o` | Output file path (.md/.txt). Omit to print to stdout. | `None` (stdout) |
+| `--size` | | Target size `WxH` | `1024x768` |
+| `--num-frames` | | Number of frames (video only) | `121` |
+| `--frame-rate` | | Frame rate in FPS (video only) | `24` |
+
+### `multiprompt` subcommand — multiple prompt versions
+
+Generate N different image or video prompt versions from raw text or file content. The AI creates each version with a unique creative angle (different composition, style, mood, or visual interpretation). Outputs a standard segments JSON file that `content-production image` / `content-production video` batch commands can consume directly.
+
+```bash
+# Generate 4 different image prompt versions (default count)
+python scripts/cli.py multiprompt -t image -i article.md -o prompts.json
+
+# Generate 6 video prompt versions
+python scripts/cli.py multiprompt -t video -i article.md -n 6 -o video-prompts.json
+
+# Print to stdout (3 versions)
+python scripts/cli.py multiprompt -t image -i "A peaceful garden scene" -n 3
+
+# Then feed to content-production for batch image/video generation
+python ../content-production/scripts/cli.py image -i prompts.json -o images/
+python ../content-production/scripts/cli.py video -i video-prompts.json -o videos/
+```
+
+**Output format (standard segments JSON):**
+
+```json
+{
+  "total_segments": 4,
+  "segments": [
+    {
+      "index": 0,
+      "title": "Wide cinematic shot",
+      "text": "",
+      "word_count": 0,
+      "char_count": 0,
+      "image_prompt": "A wide cinematic shot of..."
+    }
+  ]
+}
+```
+
+Each segment has `index`, `title` (creative angle label), and `image_prompt` or `video_prompt` — directly compatible with content-production batch commands.
+
+| Argument | Short | Description | Default |
+|----------|-------|-------------|---------|
+| `--input` | `-i` | Raw text string or path to .md/.txt file | (required) |
+| `--type` | `-t` | Prompt type: `image` or `video` | (required) |
+| `--count` | `-n` | Number of prompt versions (2–10) | `4` |
+| `--output` | `-o` | Output JSON file path. Omit to print to stdout. | `None` (stdout) |
 | `--size` | | Target size `WxH` | `1024x768` |
 | `--num-frames` | | Number of frames (video only) | `121` |
 | `--frame-rate` | | Frame rate in FPS (video only) | `24` |
@@ -301,18 +361,25 @@ User Input (text / file + requirements: segments, max_words, max_chars)
                 ├── prompts ──> generate_prompts() ──> process existing
                 │                 segments JSON → add prompt fields
                 │
-                └── genprompt ──> generate_single_prompt()
-                                       │
-                                       └── ONE prompt → AI returns
-                                           single image or video prompt
-                                           └── format_prompt_file()
-                                                 └── proprietary .md/.txt
-                                                     → content-production single
+                ├── genprompt ──> generate_single_prompt()
+                │                       │
+                │                       └── ONE prompt → AI returns
+                │                           single image or video prompt
+                │                           └── format_prompt_file()
+                │                                 └── proprietary .md/.txt
+                │                                     → content-production single
+                │
+                └── multiprompt ──> generate_multiple_prompts()
+                                        │
+                                        └── ONE prompt → AI returns
+                                            N different prompt versions
+                                            └── segments JSON
+                                                  → content-production image/video (batch)
 ```
 
 ## Output consumed by
 
-- **content-production (A2)**: receives segments + prompts for image/video/audio generation via `segments.json`, OR receives single prompt files (`.md`/`.txt`) via the proprietary `genprompt` format for single image/video generation
+- **content-production (A2)**: receives segments + prompts for image/video/audio generation via `segments.json`, OR receives single prompt files (`.md`/`.txt`) via the proprietary `genprompt` format for single image/video generation, OR receives multi-prompt JSON via `multiprompt` for batch image/video generation
 - **Direct publishing**: Markdown output published directly to RBH Agent Blog/Skills pages
 - **Programmatic processing**: JSON output for downstream automation
 
