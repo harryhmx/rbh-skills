@@ -47,6 +47,14 @@ When invoked from Claude Code, Claude runs the CLI:
 Composite images from ucla-captioned/ and audio from ucla-audio/ into videos/
 ```
 
+### Python Environment
+
+Activate the shared virtual environment before running any Python CLI commands:
+
+```bash
+source ../.venv/bin/activate
+```
+
 ### Python CLI
 
 ```bash

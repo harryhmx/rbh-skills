@@ -45,6 +45,14 @@ When invoked from Claude Code, Claude reads the segments JSON and runs the CLI:
 Generate images from ucla-segments.json, size 512x512, save to images/
 ```
 
+### Python Environment
+
+Activate the shared virtual environment before running any Python CLI commands:
+
+```bash
+source ../.venv/bin/activate
+```
+
 ### Python CLI
 
 ```bash
