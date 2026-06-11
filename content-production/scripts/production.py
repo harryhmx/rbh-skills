@@ -54,6 +54,45 @@ SPEECH_MODEL = os.environ.get("SPEECH_MODEL", "fishaudio/fish-speech-1.5")
 SPEECH_VOICE = os.environ.get("SPEECH_VOICE", "fishaudio/fish-speech-1.5:anna")
 
 MAX_RETRIES = 2
+DOWNLOAD_RETRIES = 3          # retries for the download step only
+DOWNLOAD_BACKOFF_BASE = 2.0   # seconds, multiplied by 2^(attempt-1)
+
+
+def _download_with_retry(url: str, timeout: int = 60) -> bytes:
+    """Download *url* with exponential-backoff retries on transient failures.
+
+    Retries up to ``DOWNLOAD_RETRIES`` times, only for connection/timeout/SSL
+    errors.  Does **not** retry on HTTP 4xx/5xx — those are treated as
+    permanent failures.
+
+    Raises the last exception if all attempts are exhausted.
+    """
+    last_exc: Exception | None = None
+
+    for attempt in range(1, DOWNLOAD_RETRIES + 1):
+        try:
+            resp = http_requests.get(url, timeout=timeout)
+            resp.raise_for_status()
+            return resp.content
+        except (
+            http_requests.exceptions.Timeout,
+            http_requests.exceptions.ConnectionError,
+            http_requests.exceptions.SSLError,
+        ) as exc:
+            last_exc = exc
+            if attempt < DOWNLOAD_RETRIES:
+                wait = DOWNLOAD_BACKOFF_BASE * (2 ** (attempt - 1))
+                logger.warning(
+                    "Download attempt %d/%d failed (%s), retrying in %.1fs...",
+                    attempt, DOWNLOAD_RETRIES, exc, wait,
+                )
+                time.sleep(wait)
+        except Exception:
+            raise  # HTTPError, etc. — don't retry
+
+    logger.error("Download failed after %d attempts", DOWNLOAD_RETRIES)
+    raise last_exc  # type: ignore[misc]
+
 
 # ---------------------------------------------------------------------------
 # Prompt file parser — reads the proprietary RBH prompt file format
@@ -198,18 +237,17 @@ def generate_single_image(
             image_url = urls[0]
             logger.info("Downloading image from %s...", image_url[:80])
 
-            img_res = http_requests.get(image_url, timeout=60)
-            img_res.raise_for_status()
+            img_res = _download_with_retry(image_url)
 
-            if len(img_res.content) < 1000:
-                logger.warning("Image too small (%d bytes), retrying", len(img_res.content))
+            if len(img_res) < 1000:
+                logger.warning("Image too small (%d bytes), retrying", len(img_res))
                 if attempt < MAX_RETRIES:
                     time.sleep(2)
                 continue
 
-            out.write_bytes(img_res.content)
+            out.write_bytes(img_res)
 
-            logger.info("Saved %s (%d bytes)", out.name, len(img_res.content))
+            logger.info("Saved %s (%d bytes)", out.name, len(img_res))
             return {
                 "file_path": str(out.resolve()),
                 "url": image_url,
@@ -637,19 +675,18 @@ def generate_images(
                 image_url = urls[0]
                 logger.info("[%d/%d] Downloading from %s...", idx + 1, total, image_url[:80])
 
-                img_res = http_requests.get(image_url, timeout=60)
-                img_res.raise_for_status()
+                img_res = _download_with_retry(image_url)
 
-                if len(img_res.content) < 1000:
-                    logger.warning("Image too small (%d bytes), retrying", len(img_res.content))
+                if len(img_res) < 1000:
+                    logger.warning("Image too small (%d bytes), retrying", len(img_res))
                     continue
 
-                file_path.write_bytes(img_res.content)
+                file_path.write_bytes(img_res)
                 url = image_url
 
                 logger.info(
                     "[%d/%d] Saved %s (%d bytes)",
-                    idx + 1, total, file_path.name, len(img_res.content),
+                    idx + 1, total, file_path.name, len(img_res),
                 )
                 break
 
