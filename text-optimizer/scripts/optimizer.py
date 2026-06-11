@@ -45,13 +45,17 @@ def read_input(source: str) -> str:
     check whether the string points to an existing ``.md`` or ``.txt``
     file.
     """
-    if "\n" in source:
+    # Quick length guard: anything longer than max plausible filename is raw text
+    if "\n" in source or len(source) > 255:
         return source
 
     path = Path(source)
-    if path.exists() and path.is_file() and path.suffix.lower() in (".md", ".txt"):
-        logger.info("Reading input from file: %s", path)
-        return path.read_text(encoding="utf-8")
+    try:
+        if path.exists() and path.is_file() and path.suffix.lower() in (".md", ".txt"):
+            logger.info("Reading input from file: %s", path)
+            return path.read_text(encoding="utf-8")
+    except OSError:
+        pass  # e.g. file name too long — treat as raw text
 
     return source
 
