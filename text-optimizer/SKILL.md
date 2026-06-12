@@ -1,7 +1,7 @@
 ---
 name: text-optimizer
 description: "Split long text into semantically coherent segments for content production, or generate single/multiple image/video prompts from text. Accepts raw text or file input (md/txt), outputs structured segments with optional image/video/TTS prompts, or outputs single prompt in proprietary format, or outputs multiple prompt versions as JSON for content-production batch processing. Use when preparing articles, stories, or long-form content for multi-segment publishing, when asked to 'split this article into parts', 'break this text into sections', 'generate a prompt for this text', 'create multiple image prompts from this article', or 'create an image/video prompt from this article'."
-version: "0.3.0"
+version: "0.3.1"
 allowed-tools: ["Bash", "Read", "Write"]
 ---
 
