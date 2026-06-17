@@ -1,25 +1,23 @@
 ---
 name: text-optimizer
-description: "Split long text into semantically coherent segments for content production, or generate single/multiple image/video prompts from text. Accepts raw text or file input (md/txt), outputs structured segments with optional image/video/TTS prompts, or outputs single prompt in proprietary format, or outputs multiple prompt versions as JSON for content-production batch processing. Use when preparing articles, stories, or long-form content for multi-segment publishing, when asked to 'split this article into parts', 'break this text into sections', 'generate a prompt for this text', 'create multiple image prompts from this article', or 'create an image/video prompt from this article'."
-version: "0.3.1"
+description: "Split long text into semantically coherent segments, or optimize text (summarize/expand/refine) and generate image/video prompts. Accepts raw text or file input (md/txt), outputs structured JSON segments with optional prompts. Use when preparing articles, stories, or long-form content for multi-segment publishing, or transforming text into prompts for content production."
+version: "0.4.0"
 allowed-tools: ["Bash", "Read", "Write"]
 ---
 
 # Text Optimizer
 
-Splits long text into semantically coherent segments — the entry point of the RBH content production pipeline. Each output segment is self-contained and suitable for downstream processing (image generation, video synthesis, cross-platform publishing).
+Splits long text into semantically coherent segments, or transforms text (summarize, expand, refine) and generates image/video prompts — the entry point of the RBH content production pipeline.
 
-**Always AI-powered.** The full text + all requirements (segment count, word/char limits) are sent to the AI in a single prompt. The model sees the whole picture and returns finished segments in one response — no multi-step split-then-condense, no heuristic fallbacks.
+**Always AI-powered.** The full text + all requirements are sent to the AI in a single prompt. The model sees the whole picture and returns finished segments in one response.
 
 ## What this skill does
 
 1. **Reads** long text from direct input or `.md` / `.txt` files
-2. **Splits** the text at natural semantic boundaries
-3. **Condenses** segments to fit within word/character limits (when specified)
-4. **Outputs** structured segments as JSON, Markdown, or plain text
-5. **Generates** (optionally) image/video/TTS prompts with strict format requirements for each medium — feeding into `content-production`
-6. **Generates single prompts** — transform any text into a single image or video prompt, output in a proprietary format that `content-production single` can consume directly
-7. **Generates multiple prompt versions** — transform any text into N different image or video prompt versions (default 4), each with a unique creative angle, output as JSON that `content-production image/video` batch commands can consume directly
+2. **Splits** text at natural semantic boundaries (file input only)
+3. **Optimizes** text — summarize long content, expand short content, or refine for readability
+4. **Generates** image/video prompts for each segment
+5. **Outputs** structured segments as JSON
 
 ### Splitting principles
 
@@ -35,21 +33,15 @@ Trigger this skill when the user asks to:
 - "Split / break / segment this article / text / content"
 - "Divide this into N parts / sections"
 - "Prepare this article for content production"
-- "Chunk this text for processing"
-- Read a `.md` or `.txt` file and split its contents
-- "Generate a prompt for this text" (single image/video prompt)
-- "Create an image prompt from this article"
-- "Turn this into a video prompt"
-- "Generate multiple prompts for this text" (N versions, JSON output)
-- "Create several image prompt variations"
+- "Summarize / expand / refine this text"
+- "Generate image/video prompts from this text"
 
 ## When NOT to use it
 
 - **Code refactoring / splitting source files** — this skill is for natural language text, not code
-- **Summarization** — use the `summarize` skill instead
 - **Translation** — this skill does not translate text
 - **File format conversion** (e.g., PDF → MD) — use `content-extractor` (A5, Stage 6)
-- **Short text** (< 100 words) — splitting is unnecessary; output the text as-is
+- **Short text** (< 100 words) for splitting — use `optimize` instead
 
 ## How to invoke
 
@@ -59,7 +51,7 @@ When invoked from Claude Code, Claude itself acts as the AI — reading the text
 
 **From direct text:**
 ```
-Split this article into 4 segments, each under 200 words:
+Split this article into 4 segments:
 <article text>
 ```
 
@@ -73,14 +65,7 @@ Split /path/to/article.md into 4 segments
 1. **Read** the input (user message or file via `Read` tool)
 2. **Analyze** semantic structure: paragraph boundaries, topic shifts, section headings, narrative flow
 3. **Determine segment count** (user-specified or auto: ~150-300 words per segment)
-4. **Apply length limits** if requested — condense while preserving key facts, tone, and core message
-5. **Output** in the requested format
-
-**Quality checks:**
-- Each segment is self-contained
-- No mid-sentence splits
-- Logical flow preserved
-- When condensing: key facts, tone, and core message are preserved
+4. **Output** in JSON format
 
 ### Python Environment
 
@@ -90,118 +75,38 @@ Activate the shared virtual environment before running any Python CLI commands:
 source ../.venv/bin/activate
 ```
 
-### Python CLI (for other Agents, batch processing, and REST API wrapping)
+### Python CLI
+
+Three subcommands: `split`, `optimize`, and `prompts`.
+
+#### `split` — Semantic text segmentation (file input only)
+
+Splits a `.md` or `.txt` file into semantically coherent segments. No word/character length limits — the AI splits at natural boundaries. Use `--extra-requirements` for additional constraints.
 
 ```bash
 # Auto segment count, JSON to stdout
 python scripts/cli.py split -i article.md
 
-# 4 segments with word-count limit (one AI call handles both)
-python scripts/cli.py split -i article.md -n 4 --max-words 200 -f md
+# 4 segments with extra requirements
+python scripts/cli.py split -i article.md -n 4 --extra-requirements "use simple language for children"
 
-# Split AND generate all image/video/TTS prompts
-python scripts/cli.py split -i article.md -n 4 --prompts -f json -o result.json
+# Split AND generate image + video prompts
+python scripts/cli.py split -i article.md -n 4 --prompts --prompt-types image,video -o result.json
 
-# Split and generate only image prompts
-python scripts/cli.py split -i article.md -n 4 --prompts --prompt-types image -f json
-
-# Split and generate image + TTS prompts (skip video)
-python scripts/cli.py split -i article.md -n 4 --prompts --prompt-types image,tts -f json
-
-# Character-count limit for CJK text, write to file
-python scripts/cli.py split -i article.md --max-chars 500 -f json -o result.json
-
-# From stdin
-cat article.md | python scripts/cli.py split -n 3 -f text
-
-# Generate prompts from an existing segments JSON file
-python scripts/cli.py prompts -i segments.json -o prompts.json
-
-# Generate only TTS prompts from existing segments
-python scripts/cli.py prompts -i segments.json --prompt-types tts
 ```
 
 **CLI arguments:**
 
 | Argument | Short | Description | Default |
 |----------|-------|-------------|---------|
-| `--input` | `-i` | Raw text string OR path to .md/.txt file (omit for stdin) | (stdin) |
+| `--input` | `-i` | Path to .md or .txt file (required) | — |
 | `--segments` | `-n` | Target number of segments (omit for auto) | `None` (auto) |
-| `--format` | `-f` | Output format: `json`, `md`, or `text` | `json` |
-| `--output` | `-o` | Output file path (omit to print to stdout) | `None` (stdout) |
-| `--max-words` | | Max words per segment — AI condenses if exceeded | `None` (no limit) |
-| `--max-chars` | | Max characters per segment (useful for CJK) | `None` (no limit) |
-| `--prompts` | | Also generate image/video/TTS prompts via AI | `False` |
-| `--prompt-types` | | Comma-separated prompt types: `image`, `video`, `tts`, or `all` | `all` |
+| `--output` | `-o` | Output JSON file path (omit to print to stdout) | `None` (stdout) |
+| `--prompts` | | Also generate image/video prompts via AI | `False` |
+| `--prompt-types` | | Comma-separated prompt types: `image`, `video`, or `all` | `all` |
+| `--extra-requirements` | | Additional requirements for the AI prompt | `""` |
 
-### `prompts` subcommand
-
-| Argument | Short | Description | Default |
-|----------|-------|-------------|---------|
-| `--input` | `-i` | Path to segments JSON file (from `split` command) | (required) |
-| `--output` | `-o` | Output file path (omit to print to stdout) | `None` (stdout) |
-| `--prompt-types` | | Comma-separated prompt types: `image`, `video`, `tts`, or `all` | `all` |
-
-### `genprompt` subcommand — single prompt generation
-
-Generate a single image or video prompt from raw text or file content. The output uses a proprietary YAML-like frontmatter format that `content-production single` can consume.
-
-```bash
-# Generate a single image prompt to stdout
-python scripts/cli.py genprompt -t image -i "A classroom scene with students"
-
-# Generate from a file, save to output
-python scripts/cli.py genprompt -t image -i article.md -o my-image-prompt.md
-
-# Generate a single video prompt from file content
-python scripts/cli.py genprompt -t video -i article.md -o my-video-prompt.md
-
-# Video with custom settings
-python scripts/cli.py genprompt -t video -i article.md --size 1920x1080 --num-frames 241 --frame-rate 30
-```
-
-**Output format (proprietary RBH prompt file):**
-
-```markdown
----
-type: image
-size: 1024x768
----
-
-A wide shot of a sunlit classroom with students engaged...
-```
-
-Video prompt files additionally include `num_frames` and `frame_rate` frontmatter keys.
-
-| Argument | Short | Description | Default |
-|----------|-------|-------------|---------|
-| `--input` | `-i` | Raw text string or path to .md/.txt file | (required) |
-| `--type` | `-t` | Prompt type: `image` or `video` | (required) |
-| `--output` | `-o` | Output file path (.md/.txt). Omit to print to stdout. | `None` (stdout) |
-| `--size` | | Target size `WxH` | `1024x768` |
-| `--num-frames` | | Number of frames (video only) | `121` |
-| `--frame-rate` | | Frame rate in FPS (video only) | `24` |
-
-### `multiprompt` subcommand — multiple prompt versions
-
-Generate N different image or video prompt versions from raw text or file content. The AI creates each version with a unique creative angle (different composition, style, mood, or visual interpretation). Outputs a standard segments JSON file that `content-production image` / `content-production video` batch commands can consume directly.
-
-```bash
-# Generate 4 different image prompt versions (default count)
-python scripts/cli.py multiprompt -t image -i article.md -o prompts.json
-
-# Generate 6 video prompt versions
-python scripts/cli.py multiprompt -t video -i article.md -n 6 -o video-prompts.json
-
-# Print to stdout (3 versions)
-python scripts/cli.py multiprompt -t image -i "A peaceful garden scene" -n 3
-
-# Then feed to content-production for batch image/video generation
-python ../content-production/scripts/cli.py image -i prompts.json -o images/
-python ../content-production/scripts/cli.py video -i video-prompts.json -o videos/
-```
-
-**Output format (standard segments JSON):**
+**Output format (JSON):**
 
 ```json
 {
@@ -209,122 +114,95 @@ python ../content-production/scripts/cli.py video -i video-prompts.json -o video
   "segments": [
     {
       "index": 0,
-      "title": "Wide cinematic shot",
-      "text": "",
-      "word_count": 0,
-      "char_count": 0,
-      "image_prompt": "A wide cinematic shot of..."
-    }
-  ]
-}
-```
-
-Each segment has `index`, `title` (creative angle label), and `image_prompt` or `video_prompt` — directly compatible with content-production batch commands.
-
-| Argument | Short | Description | Default |
-|----------|-------|-------------|---------|
-| `--input` | `-i` | Raw text string or path to .md/.txt file | (required) |
-| `--type` | `-t` | Prompt type: `image` or `video` | (required) |
-| `--count` | `-n` | Number of prompt versions (2–10) | `4` |
-| `--output` | `-o` | Output JSON file path. Omit to print to stdout. | `None` (stdout) |
-| `--size` | | Target size `WxH` | `1024x768` |
-| `--num-frames` | | Number of frames (video only) | `121` |
-| `--frame-rate` | | Frame rate in FPS (video only) | `24` |
-
-### Segment length control
-
-Constrain each segment to a maximum word or character count:
-
-- **`--max-words N`**: AI condenses segments to ≤N words
-- **`--max-chars N`**: AI condenses segments to ≤N characters
-- **Both set**: the stricter limit applies
-
-The AI handles splitting AND condensation in a single pass — it sees the whole text and makes smarter decisions than a two-step split-then-condense pipeline would.
-
-Use cases:
-- Social media posts (e.g., WeChat ~140 chars)
-- Video scripts (30 seconds ≈ 100 words per segment)
-- Platform constraints (Xiaohongshu description limits)
-
-### Prompt generation
-
-When `--prompts` is used (or the `prompts` subcommand), the AI transforms each segment into professionally formatted prompts for three downstream tools. A single API call processes all segments.
-
-#### Prompt format requirements
-
-**Image prompt (`image_prompt`)** — suitable for Stable Diffusion, DALL·E, Midjourney, Flux:
-- 2-4 sentences in English, describing the scene VISUALLY
-- Includes: subjects, setting, actions, art style ("colorful children's book illustration"), composition, lighting, color palette
-- Only what can be drawn/illustrated — no abstract concepts
-
-**Video prompt (`video_prompt`)** — suitable for Runway, Pika, Sora:
-- 2-4 sentences in English, describing motion and action
-- Includes: camera movement, pacing, transitions (fade in/out)
-
-**TTS prompt (`tts_prompt`)** — natural spoken narration:
-- Same language as the original text
-- Starts with a voice direction: `(warm and gentle tone, moderate pace)`
-- Adjusted for natural speech flow
-
-#### Selective generation
-
-Use `--prompt-types` to generate only the prompts you need:
-
-```bash
-# Image prompts only
-python scripts/cli.py split -i article.md --prompts --prompt-types image -f json
-
-# Image + TTS, skip video
-python scripts/cli.py split -i article.md --prompts --prompt-types image,tts -f json
-
-# TTS only from existing segments
-python scripts/cli.py prompts -i segments.json --prompt-types tts
-```
-
-## Examples
-
-### Example 1: Native Claude Code — auto segments
-
-**Input:**
-```
-Split this into segments:
-
-人工智能正在改变教育的方方面面。从个性化学习路径到智能辅导系统，
-AI技术让每个学生都能获得量身定制的学习体验...
-
-然而，AI在教育中的应用也面临诸多挑战。数据隐私、算法偏见...
-
-展望未来，AI与教育的融合将更加深入。自适应学习系统...
-```
-
-**Output (3 segments, auto-determined):**
-
-- **Segment 1** (AI改变教育): 人工智能正在改变教育的方方面面...
-- **Segment 2** (挑战与隐忧): 然而，AI在教育中的应用也面临诸多挑战...
-- **Segment 3** (未来展望): 展望未来，AI与教育的融合将更加深入...
-
-### Example 2: CLI — file input with length limits
-
-```bash
-$ python scripts/cli.py split -i article.md -n 4 --max-words 200 -f md -o result.md
-```
-
-### Example 3: CLI — JSON output structure
-
-```json
-{
-  "total_segments": 4,
-  "segments": [
-    {
-      "index": 0,
-      "title": "开篇引入",
+      "title": "Opening Scene",
       "text": "Segment text content...",
-      "word_count": 180,
-      "char_count": 520
+      "image_prompt": "A wide shot of...",
+      "video_prompt": "Fade in from black..."
     }
   ]
 }
 ```
+
+Required fields: `index`, `title`. Optional fields (added when `--prompts` is used): `text`, `image_prompt`, `video_prompt`.
+
+#### `optimize` — Unified text optimization and prompt generation
+
+Replaces the old `genprompt` and `multiprompt` commands. Transforms text via AI: summarize long content, expand short content, refine readability, or generate image/video prompts. Default mode: single segment with only the `text` field.
+
+```bash
+# Default: optimize text (summarize/expand as needed), single segment
+python scripts/cli.py optimize -i article.md
+
+# Expand short text
+python scripts/cli.py optimize -i "A short description." --direction expand
+
+# Summarize long text into 3 segments
+python scripts/cli.py optimize -i article.md -n 3 --direction summarize
+
+# Generate 4 different image prompts from text (no text field)
+python scripts/cli.py optimize -i article.md -n 4 --fields image_prompt -o prompts.json
+
+# Generate text + image_prompt + video_prompt
+python scripts/cli.py optimize -i article.md --fields text,image_prompt,video_prompt
+
+# All fields with extra requirements
+python scripts/cli.py optimize -i article.md --fields all --extra-requirements "for children aged 8-10"
+
+# Pipe from stdin
+echo "A short text to optimize" | python scripts/cli.py optimize
+```
+
+**CLI arguments:**
+
+| Argument | Short | Description | Default |
+|----------|-------|-------------|---------|
+| `--input` | `-i` | Raw text string, path to .md/.txt file, or stdin | required |
+| `--segments` | `-n` | Number of segments (1 = single, > 1 = multiple versions) | `1` |
+| `--output` | `-o` | Output JSON file path (omit for stdout) | `None` |
+| `--fields` | | Fields to generate: `text`, `image_prompt`, `video_prompt` (comma-separated, or `all`) | `text` |
+| `--direction` | | Text transformation: `auto`, `summarize`, `expand`, `refine` | `auto` |
+| `--extra-requirements` | | Additional requirements for the AI prompt | `""` |
+
+#### `prompts` — Add prompts to existing segments JSON
+
+Takes a segments JSON file (from `split` or `optimize`) and generates prompt fields for each segment.
+
+```bash
+# Generate all prompt types
+python scripts/cli.py prompts -i segments.json -o with-prompts.json
+
+```
+
+**CLI arguments:**
+
+| Argument | Short | Description | Default |
+|----------|-------|-------------|---------|
+| `--input` | `-i` | Path to segments JSON file | required |
+| `--output` | `-o` | Output JSON file path | `None` (stdout) |
+| `--prompt-types` | | Comma-separated: `image`, `video`, or `all` | `all` |
+
+### Prompt field descriptions
+
+**`text`** — The optimized/transformed text content. Summarized for long input, expanded for short input, or refined for readability. Also serves as the speech content for audio generation.
+
+**`image_prompt`** — Visual description for AI image generation (Stable Diffusion, DALL·E, etc.):
+- 2-4 sentences in English, describing the scene VISUALLY
+- Includes: subjects, setting, composition, lighting, color palette
+
+**`video_prompt`** — Scene description for AI video generation (Runway, Pika, Sora):
+- 2-4 sentences in English, describing motion and action
+- Includes: camera movement, pacing, transitions
+
+## Migration from old commands (v0.3.x)
+
+| Old command | New command |
+|---|---|
+| `split -i file.md -n 4 --max-words 200 -f json` | `split -i file.md -n 4 --extra-requirements "each under 200 words"` |
+| `genprompt -t image -i text` | `optimize -i text --fields image_prompt` |
+| `genprompt -t video -i file.md -o prompt.md` | `optimize -i file.md --fields video_prompt -o output.json` |
+| `multiprompt -t image -i text -n 4` | `optimize -i text -n 4 --fields image_prompt` |
+| `multiprompt -t video -i file.md -n 6` | `optimize -i file.md -n 6 --fields video_prompt` |
+| `content-production single -i prompt.md` | `optimize -i text -n 1 --fields image_prompt -o seg.json` then `content-production image -i seg.json` |
 
 ## Configuration
 
@@ -334,14 +212,14 @@ The Python CLI requires these environment variables (from `skills/.env` or syste
 |----------|-------------|----------|
 | `TEXT_API_KEY` | Agnes AI API key | **Yes** |
 | `TEXT_BASE_URL` | Agnes AI API base URL | Default: `https://apihub.agnes-ai.com` |
-| `TEXT_CHAT_MODEL` | Model for splitting | Default: `agnes-2.0-flash` |
+| `TEXT_CHAT_MODEL` | Model for text processing | Default: `agnes-2.0-flash` |
 
 **Native Claude Code requires no configuration** — Claude's built-in LLM handles everything.
 
 ## Architecture
 
 ```
-User Input (text / file + requirements: segments, max_words, max_chars)
+User Input (text / file + requirements)
         │
         ├── Native Claude Code ──> Claude reads SKILL.md, receives the full
         │                          text + requirements in one turn, outputs result
@@ -349,38 +227,30 @@ User Input (text / file + requirements: segments, max_words, max_chars)
         └── CLI (scripts/cli.py)
                 │
                 ├── split ──> _ai_split() ──> ONE prompt to Agnes AI
-                │                    │           full text + segment count + limits
+                │                    │           full text + segment count
                 │                    │           returns: finished segments
                 │                    │
                 │                    └── + --prompts ──> generate_prompts()
                 │                                          │
                 │                                          └── ONE prompt → AI returns
-                │                                              image/video/TTS prompts
-                │                                              for all segments at once
+                │                                              image_prompt/video_prompt
+                │                                              for all segments
                 │
-                ├── prompts ──> generate_prompts() ──> process existing
-                │                 segments JSON → add prompt fields
+                ├── optimize ──> optimize_text()
+                │                    │
+                │                    └── ONE prompt → AI returns
+                │                        text/image_prompt/video_prompt
+                │                        in 1 to N segment(s)
                 │
-                ├── genprompt ──> generate_single_prompt()
-                │                       │
-                │                       └── ONE prompt → AI returns
-                │                           single image or video prompt
-                │                           └── format_prompt_file()
-                │                                 └── proprietary .md/.txt
-                │                                     → content-production single
-                │
-                └── multiprompt ──> generate_multiple_prompts()
-                                        │
-                                        └── ONE prompt → AI returns
-                                            N different prompt versions
-                                            └── segments JSON
-                                                  → content-production image/video (batch)
+                └── prompts ──> generate_prompts()
+                                     │
+                                     └── add prompt fields to existing segments JSON
 ```
 
 ## Output consumed by
 
-- **content-production (A2)**: receives segments + prompts for image/video/audio generation via `segments.json`, OR receives single prompt files (`.md`/`.txt`) via the proprietary `genprompt` format for single image/video generation, OR receives multi-prompt JSON via `multiprompt` for batch image/video generation
-- **Direct publishing**: Markdown output published directly to RBH Agent Blog/Skills pages
+- **content-production (A2)**: receives segments + prompts for image/video/audio generation via `segments.json`
+- **Direct publishing**: JSON output published directly or further processed
 - **Programmatic processing**: JSON output for downstream automation
 
 ## Dependencies

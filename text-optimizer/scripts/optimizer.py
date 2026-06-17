@@ -1,9 +1,10 @@
 """
-Text Optimizer — semantic text splitting powered by AI.
+Text Optimizer — AI-powered semantic text splitting, unified text optimization,
+and prompt generation for image/video.
 
-Single code path: the full text + all requirements (segment count, word/char
-limits) are sent to the AI in ONE prompt.  The model sees the whole picture
-and returns finished segments in a single response.
+Single code path: the full text + all requirements are sent to the AI in ONE
+prompt.  The model sees the whole picture and returns finished segments in a
+single response.
 """
 
 from __future__ import annotations
@@ -63,12 +64,13 @@ def read_input(source: str) -> str:
 def split_text(
     text: str,
     num_segments: Optional[int] = None,
-    max_words: Optional[int] = None,
-    max_chars: Optional[int] = None,
+    extra_requirements: str = "",
 ) -> list[dict]:
     """Split *text* into semantically coherent segments via AI.
 
     The full text and all requirements are sent to the AI in ONE prompt.
+    No word/character length limits are applied — the AI splits at natural
+    semantic boundaries.
 
     Parameters
     ----------
@@ -76,17 +78,14 @@ def split_text(
         The full text to split.
     num_segments : int or None
         Target segment count.  When ``None`` the AI decides.
-    max_words : int or None
-        Maximum words per segment — AI condenses if needed.
-    max_chars : int or None
-        Maximum characters per segment.  When both are set the stricter
-        limit applies.
+    extra_requirements : str
+        Additional requirements appended to the AI prompt (e.g.
+        "use simple language for children").  Can be empty.
 
     Returns
     -------
     list[dict]
-        Each dict has ``index``, ``title``, ``text``, ``word_count``,
-        ``char_count``.
+        Each dict has ``index``, ``title``, ``text``.
     """
     text = text.strip()
     if not text:
@@ -98,11 +97,11 @@ def split_text(
             "Set it in skills/.env or as an environment variable."
         )
 
-    return _ai_split(text, num_segments, max_words, max_chars)
+    return _ai_split(text, num_segments, extra_requirements)
 
 
 # ---------------------------------------------------------------------------
-# Prompt generation — one AI call transforms all segments into image/video/TTS
+# Prompt generation — one AI call transforms all segments into image/video
 # prompts with strict format requirements for each medium.
 # ---------------------------------------------------------------------------
 
@@ -135,28 +134,16 @@ STRICT format:
 - Example: "Fade in from black to a wide shot of a modern conference room. The camera slowly pans right across attendees seated around a table, each nodding in turn as a point is made. A presenter at the front gestures toward a projected chart. Slow, professional pacing with natural atmosphere. Fade out as the discussion concludes."
 """,
     },
-    "tts": {
-        "key": "tts_prompt",
-        "header": "## TTS Prompt (tts_prompt)",
-        "body": """Convert the segment text into natural spoken narration.
-STRICT format:
-- Must be in the SAME LANGUAGE as the original segment text
-- Start with a voice direction in parentheses: (warm and gentle tone, moderate pace) or (excited and energetic, faster pace) or (calm and thoughtful, slower pace) — choose the tone that best matches the content
-- The spoken text should sound NATURAL when read aloud — adjust written phrasing slightly for speech if needed (e.g., break long sentences, add natural pauses)
-- Preserve ALL key information and the core message
-- Example: "(warm and gentle tone, moderate pace) 人工智能正在改变教育的方方面面。从个性化学习路径到智能辅导系统，AI技术让每个学生都能获得量身定制的学习体验。"
-""",
-    },
 }
 
-ALL_PROMPT_TYPES = frozenset(_PROMPT_TYPE_SPECS.keys())  # {"image", "video", "tts"}
+ALL_PROMPT_TYPES = frozenset(_PROMPT_TYPE_SPECS.keys())  # {"image", "video"}
 
 
 def _build_prompts_template(types: frozenset[str]) -> str:
     """Build the AI prompt template for the requested prompt *types*."""
     sections = []
     return_keys = []
-    for t in sorted(types):  # deterministic order: image, tts, video
+    for t in sorted(types):  # deterministic order: image, video
         spec = _PROMPT_TYPE_SPECS[t]
         sections.append(spec["header"])
         sections.append(spec["body"])
@@ -188,7 +175,7 @@ def generate_prompts(
     segments: list[dict],
     types: frozenset[str] = ALL_PROMPT_TYPES,
 ) -> list[dict]:
-    """Generate image/video/TTS prompts for each segment via AI.
+    """Generate image/video prompts for each segment via AI.
 
     All segments are sent to the AI in ONE call.  The AI receives the full
     context and returns the requested prompt types for every segment, each
@@ -197,16 +184,17 @@ def generate_prompts(
     Parameters
     ----------
     segments : list[dict]
-        Segments from :func:`split_text`.  Each must have ``index``,
-        ``title``, and ``text``.
+        Segments from :func:`split_text` or :func:`optimize_text`.  Each must
+        have ``index``, ``title``, and ``text``.
     types : frozenset[str]
         Which prompt types to generate.  Any subset of
-        ``{"image", "video", "tts"}``.  Default: all three.
+        ``{"image", "video"}``.  Default: both.
 
     Returns
     -------
     list[dict]
-        The same segments with the requested prompt keys added.
+        The same segments with the requested prompt keys added (``image_prompt``
+        and/or ``video_prompt``).
     """
     if not segments:
         return segments
@@ -231,7 +219,7 @@ def generate_prompts(
         segments_for_ai.append({
             "index": seg["index"],
             "title": seg.get("title", ""),
-            "text": seg["text"],
+            "text": seg.get("text", ""),
         })
 
     template = _build_prompts_template(types)
@@ -302,9 +290,31 @@ def generate_prompts(
                 f"AI returned non-JSON response for prompts. Raw: {raw[:300]}..."
             )
 
+    # Unwrap wrapper object if the AI returns one (e.g. {"segments": [...]})
+    if isinstance(prompts_list, dict):
+        # Try "segments" key first
+        if "segments" in prompts_list:
+            prompts_list = prompts_list["segments"]
+        # Try numeric-index dict: {"0": {...}, "1": {...}} → list
+        elif all(str(k).isdigit() for k in prompts_list.keys()):
+            prompts_list = [
+                v for _, v in sorted(
+                    prompts_list.items(), key=lambda x: int(x[0])
+                )
+            ]
+        # Try any key whose value is a list
+        else:
+            for key, val in prompts_list.items():
+                if isinstance(val, list):
+                    prompts_list = val
+                    break
+            else:
+                # No list value found — wrap the dict itself
+                prompts_list = [prompts_list]
     if not isinstance(prompts_list, list):
         raise RuntimeError(
             f"Expected JSON array, got {type(prompts_list).__name__}"
+            f" with keys: {list(prompts_list.keys()) if isinstance(prompts_list, dict) else 'N/A'}"
         )
 
     # Merge prompts back into segments by index
@@ -330,220 +340,216 @@ def generate_prompts(
 
 
 # ---------------------------------------------------------------------------
-# Single prompt generation — produce ONE image or video prompt from raw text
+# Unified text optimization — replaces old genprompt + multiprompt
 # ---------------------------------------------------------------------------
 
-_SINGLE_PROMPT_TEMPLATE = """You are a professional creative content producer.
+# Valid output fields for the optimize command
+VALID_OPTIMIZE_FIELDS = frozenset({"text", "image_prompt", "video_prompt"})
+DEFAULT_OPTIMIZE_FIELDS = frozenset({"text"})
 
-Given the following text, create a SINGLE {prompt_type} generation prompt following these STRICT format requirements:
+# Text transformation directions
+_OPTIMIZE_DIRECTION_SPECS: dict[str, str] = {
+    "auto": (
+        "Analyze the text length and complexity. If the text is long and "
+        "detailed, summarize it into concise, polished content suitable for "
+        "publishing. If the text is short, expand it with richer detail while "
+        "preserving the core message. For medium-length text, refine it for "
+        "readability and flow. NEVER introduce fictional facts."
+    ),
+    "summarize": (
+        "Summarize the source text into concise, polished segments. Remove "
+        "redundancy and filler, but preserve ALL key facts, the core message, "
+        "tone, and writing style. NEVER introduce new information."
+    ),
+    "expand": (
+        "Expand the source text with richer detail, vivid description, and "
+        "natural elaboration. Preserve the core message while making the "
+        "content more engaging and substantive. NEVER introduce fictional facts."
+    ),
+    "refine": (
+        "Refine the source text for readability, flow, and polish. Fix awkward "
+        "phrasing, improve transitions, and enhance clarity. Preserve length, "
+        "all key facts, and the original message."
+    ),
+}
 
-{format_spec}
+# Text optimization field spec (for when "text" is in the fields set)
+_TEXT_FIELD_SPEC = {
+    "key": "text",
+    "header": "## Optimized Text (text)",
+    "body": """Create polished, publication-ready text content.
+STRICT format:
+- Same language as the source text
+- Self-contained and readable on its own
+- Preserve all key facts, the core message, tone, and writing style
+- NEVER introduce fictional facts or new information
+""",
+}
 
-## Source text to transform
 
-{text}
+def _parse_fields(raw: str) -> frozenset[str]:
+    """Parse comma-separated field names into a validated frozenset.
 
-Return ONLY the prompt text itself — no markdown fences, no JSON wrapper, no "here is your prompt" prefix, no explanations. Just the raw prompt, 2-4 sentences in English."""
-
-
-def generate_single_prompt(
-    text: str,
-    prompt_type: str,
-    size: str = "1024x768",
-    num_frames: int = 121,
-    frame_rate: float = 24,
-) -> str:
-    """Generate a single image or video prompt from *text* via AI.
-
-    Parameters
-    ----------
-    text : str
-        The source text to transform into a prompt.
-    prompt_type : str
-        ``"image"`` or ``"video"``.
-    size : str
-        Target size in ``WxH`` format (informational, included in output metadata).
-    num_frames : int
-        Number of frames (video only, for metadata).
-    frame_rate : float
-        Frame rate in FPS (video only, for metadata).
-
-    Returns
-    -------
-    str
-        The AI-generated prompt text (2-4 sentences in English).
+    ``""`` or ``"all"`` → ``{"text", "image_prompt", "video_prompt"}``.
+    ``"text,image_prompt"`` → ``{"text", "image_prompt"}``.
     """
-    if prompt_type not in ("image", "video"):
-        raise ValueError(f"Unknown prompt_type '{prompt_type}'. Must be 'image' or 'video'.")
-
-    if not TEXT_API_KEY:
-        raise RuntimeError(
-            "TEXT_API_KEY is not set. "
-            "Set it in skills/.env or as an environment variable."
+    if not raw or not raw.strip():
+        return DEFAULT_OPTIMIZE_FIELDS
+    raw = raw.strip()
+    if raw == "all":
+        return VALID_OPTIMIZE_FIELDS
+    selected = {f.strip() for f in raw.split(",") if f.strip()}
+    invalid = selected - VALID_OPTIMIZE_FIELDS
+    if invalid:
+        raise ValueError(
+            f"Unknown fields: {sorted(invalid)}. "
+            f"Valid: {sorted(VALID_OPTIMIZE_FIELDS)}"
         )
+    if not selected:
+        return DEFAULT_OPTIMIZE_FIELDS
+    return frozenset(selected)
 
-    spec = _PROMPT_TYPE_SPECS[prompt_type]
-    format_spec = spec["body"]
 
-    prompt = _SINGLE_PROMPT_TEMPLATE.format(
-        prompt_type=prompt_type,
-        format_spec=format_spec,
-        text=text.strip(),
+def _build_optimize_prompt(
+    text: str,
+    num_segments: int,
+    fields: frozenset[str],
+    direction: str,
+    extra_requirements: str,
+) -> str:
+    """Dynamically build the AI prompt for :func:`optimize_text`.
+
+    The prompt includes only the sections relevant to the requested *fields*,
+    keeping the context tight and focused.
+    """
+    parts: list[str] = []
+
+    # ── Header ────────────────────────────────────────────────────────
+    parts.append(
+        "You are a professional creative content producer. Process the "
+        "source text according to ALL requirements below."
     )
 
-    try:
-        resp = requests.post(
-            f"{TEXT_BASE_URL}/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {TEXT_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": TEXT_CHAT_MODEL,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a professional creative content producer. "
-                            "Return ONLY the raw prompt text — no markdown fences, "
-                            "no JSON wrapper, no prefix, no explanations."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.7,
-                "max_tokens": 2048,
-            },
-            timeout=120,
+    # ── Text transformation rule ───────────────────────────────────────
+    if "text" in fields:
+        direction_rule = _OPTIMIZE_DIRECTION_SPECS.get(
+            direction, _OPTIMIZE_DIRECTION_SPECS["auto"]
         )
-        resp.raise_for_status()
-        body = resp.json()
-    except requests.RequestException as exc:
-        raise RuntimeError(f"Single prompt generation API call failed: {exc}") from exc
+        parts.append(f"## Text transformation\n{direction_rule}")
 
-    raw = body["choices"][0]["message"]["content"].strip()
+    # ── Segments rule ──────────────────────────────────────────────────
+    if num_segments == 1:
+        parts.append(
+            "## Segments to produce\n"
+            "Produce exactly 1 segment from the source text."
+        )
+    else:
+        parts.append(
+            f"## Segments to produce\n"
+            f"Produce exactly {num_segments} DIFFERENT segments. Each must "
+            f"approach the content from a UNIQUE angle — vary the focus, "
+            f"perspective, or creative treatment. No two segments should be "
+            f"similar. When working with long text, split at natural topic "
+            f"boundaries. For short text, create genuinely distinct variations."
+        )
 
-    # Strip any markdown fences or common prefixes
-    raw = re.sub(r"^```(?:.*)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
-    # Strip common "here is your prompt" prefixes
-    raw = re.sub(r"(?i)^(here\s+is\s+(your\s+)?(the\s+)?)?(image|video)\s+(generation\s+)?prompt\s*[:：\-—]\s*", "", raw)
-    raw = raw.strip()
+    # ── Field-specific sections ────────────────────────────────────────
+    # "text" field
+    if "text" in fields:
+        parts.append(_TEXT_FIELD_SPEC["header"])
+        parts.append(_TEXT_FIELD_SPEC["body"])
 
-    logger.info("Generated %s prompt (%d chars)", prompt_type, len(raw))
-    return raw
+    # image_prompt field
+    if "image_prompt" in fields:
+        parts.append(_PROMPT_TYPE_SPECS["image"]["header"])
+        parts.append(_PROMPT_TYPE_SPECS["image"]["body"])
 
+    # video_prompt field
+    if "video_prompt" in fields:
+        parts.append(_PROMPT_TYPE_SPECS["video"]["header"])
+        parts.append(_PROMPT_TYPE_SPECS["video"]["body"])
 
-def format_prompt_file(
-    prompt_text: str,
-    prompt_type: str,
-    size: str = "1024x768",
-    num_frames: int = 121,
-    frame_rate: float = 24,
-) -> str:
-    """Wrap *prompt_text* in the proprietary RBH prompt file format.
+    # ── Output format ──────────────────────────────────────────────────
+    required_keys = ["title"]
+    for f in sorted(fields):
+        required_keys.append(f)
 
-    Produces a YAML-like frontmatter block followed by the prompt text.
-    This format is consumed by ``content-production single``.
+    keys_str = "\n".join(f'- "{k}"' for k in required_keys)
 
-    Parameters
-    ----------
-    prompt_text : str
-        The generated prompt content.
-    prompt_type : str
-        ``"image"`` or ``"video"``.
-    size : str
-        Target size in ``WxH`` format.
-    num_frames : int
-        Number of frames (video only).
-    frame_rate : float
-        Frame rate in FPS (video only).
+    parts.append(
+        f"## Output format\n\n"
+        f"Return ONLY a valid JSON array of {num_segments} object(s). "
+        f"Each object must have these keys:\n"
+        f"{keys_str}\n\n"
+        f"No markdown fences, no other text, no explanations."
+    )
 
-    Returns
-    -------
-    str
-        Formatted prompt file content.
-    """
-    lines = ["---", f"type: {prompt_type}", f"size: {size}"]
-    if prompt_type == "video":
-        lines.append(f"num_frames: {num_frames}")
-        lines.append(f"frame_rate: {frame_rate}")
-    lines.append("---")
-    lines.append("")
-    lines.append(prompt_text)
-    lines.append("")
-    return "\n".join(lines)
+    # ── Extra requirements ─────────────────────────────────────────────
+    if extra_requirements.strip():
+        parts.append(f"## Additional requirements\n{extra_requirements.strip()}")
 
+    # ── Source text ────────────────────────────────────────────────────
+    parts.append(f"## Source text to process\n\n{text}")
 
-# ---------------------------------------------------------------------------
-# Multi-prompt generation — produce MULTIPLE image or video prompt versions
-# from raw text, output as segments JSON compatible with content-production
-# ---------------------------------------------------------------------------
-
-_MULTI_PROMPT_TEMPLATE = """You are a professional creative content producer.
-
-Given the following text, create {count} DIFFERENT {prompt_type} generation prompts. Each prompt must approach the content from a UNIQUE creative angle — vary the composition, visual style, mood, lighting, or key visual metaphor. No two prompts should be similar.
-
-{format_spec}
-
-## Source text to transform
-
-{text}
-
-Return ONLY a valid JSON array of {count} objects. Each object must have:
-- "title": a short label describing this version's creative angle (2-5 words in English, e.g. "Wide cinematic shot", "Close-up intimate", "Abstract geometric")
-- "{prompt_key}": the prompt text (2-4 sentences in English)
-
-No markdown fences, no other text, no explanations."""
+    return "\n\n".join(parts)
 
 
-def generate_multiple_prompts(
+def optimize_text(
     text: str,
-    prompt_type: str,
-    count: int = 4,
-    size: str = "1024x768",
-    num_frames: int = 121,
-    frame_rate: float = 24,
+    num_segments: int = 1,
+    fields: frozenset[str] = DEFAULT_OPTIMIZE_FIELDS,
+    direction: str = "auto",
+    extra_requirements: str = "",
 ) -> list[dict]:
-    """Generate *count* different image or video prompt versions from *text* via AI.
+    """Unified text optimization and prompt generation via AI.
 
-    Sends ONE AI call requesting *count* unique prompt variations, each with
-    a different creative angle.  The result is formatted as segments compatible
-    with ``content-production image`` / ``content-production video`` batch
-    commands.
+    Replaces the old ``genprompt`` and ``multiprompt`` commands.  Sends the
+    full text + all requested output fields to the AI in ONE prompt.
 
     Parameters
     ----------
     text : str
-        The source text to transform into prompts.
-    prompt_type : str
-        ``"image"`` or ``"video"``.
-    count : int
-        Number of prompt versions to generate (default 4, min 2, max 10).
-    size : str
-        Target size in ``WxH`` format (metadata only).
-    num_frames : int
-        Number of frames (video only, metadata).
-    frame_rate : float
-        Frame rate in FPS (video only, metadata).
+        Source text to transform (raw string or file content).
+    num_segments : int
+        Number of segments to produce.  ``1`` = single output (old genprompt
+        behavior), ``> 1`` = multiple versions (old multiprompt behavior).
+        Must be >= 1.
+    fields : frozenset[str]
+        Which output fields to generate.  Any subset of
+        ``{"text", "image_prompt", "video_prompt"}``.
+        Default: ``{"text"}``.
+    direction : str
+        How to transform the text when ``"text"`` is in *fields*:
+        ``"auto"`` (AI decides), ``"summarize"``, ``"expand"``, ``"refine"``.
+    extra_requirements : str
+        Additional instructions appended to the AI prompt (e.g.
+        "use simple language for children aged 8-10").  Can be empty.
 
     Returns
     -------
     list[dict]
-        List of segment dicts, each with ``index``, ``title``, ``image_prompt``
-        or ``video_prompt``, ``word_count``, ``char_count``.
-        Ready to be wrapped in ``{{"total_segments": N, "segments": [...]}}``
-        and consumed by content-production batch commands.
+        Segments with ``index``, ``title``, and the requested field keys.
     """
-    if prompt_type not in ("image", "video"):
+    text = text.strip()
+    if not text:
+        return []
+
+    if num_segments < 1:
+        raise ValueError("num_segments must be at least 1")
+
+    # Validate fields
+    invalid = fields - VALID_OPTIMIZE_FIELDS
+    if invalid:
         raise ValueError(
-            f"Unknown prompt_type '{prompt_type}'. Must be 'image' or 'video'."
+            f"Unknown fields: {sorted(invalid)}. "
+            f"Valid: {sorted(VALID_OPTIMIZE_FIELDS)}"
         )
 
-    if count < 2:
-        raise ValueError("count must be at least 2 (use genprompt for single prompts)")
-    if count > 10:
-        raise ValueError("count must be at most 10")
+    if direction not in _OPTIMIZE_DIRECTION_SPECS:
+        raise ValueError(
+            f"Unknown direction '{direction}'. "
+            f"Valid: {sorted(_OPTIMIZE_DIRECTION_SPECS.keys())}"
+        )
 
     if not TEXT_API_KEY:
         raise RuntimeError(
@@ -551,16 +557,12 @@ def generate_multiple_prompts(
             "Set it in skills/.env or as an environment variable."
         )
 
-    spec = _PROMPT_TYPE_SPECS[prompt_type]
-    prompt_key = spec["key"]
-    format_spec = spec["body"]
-
-    prompt = _MULTI_PROMPT_TEMPLATE.format(
-        count=count,
-        prompt_type=prompt_type,
-        prompt_key=prompt_key,
-        format_spec=format_spec,
-        text=text.strip(),
+    prompt = _build_optimize_prompt(
+        text=text,
+        num_segments=num_segments,
+        fields=fields,
+        direction=direction,
+        extra_requirements=extra_requirements,
     )
 
     try:
@@ -577,29 +579,28 @@ def generate_multiple_prompts(
                         "role": "system",
                         "content": (
                             "You are a professional creative content producer. "
-                            "Return ONLY valid JSON array — no markdown fences, "
+                            "Return ONLY valid JSON — no markdown fences, "
                             "no explanations, no other text."
                         ),
                     },
                     {"role": "user", "content": prompt},
                 ],
-                "temperature": 0.8,
-                "max_tokens": 4096,
+                "temperature": 0.7,
+                "max_tokens": 8192,
             },
-            timeout=180,
+            timeout=300,
         )
         resp.raise_for_status()
         body = resp.json()
     except requests.RequestException as exc:
-        raise RuntimeError(
-            f"Multi-prompt generation API call failed: {exc}"
-        ) from exc
+        raise RuntimeError(f"Optimize API call failed: {exc}") from exc
 
     raw = body["choices"][0]["message"]["content"].strip()
 
     # Strip markdown code fences if present
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
 
     try:
         items = json.loads(raw)
@@ -621,67 +622,70 @@ def generate_multiple_prompts(
                 break
         if not items:
             raise RuntimeError(
-                f"AI returned non-JSON response for multi-prompts. "
+                f"AI returned non-JSON response for optimize. "
                 f"Raw: {raw[:300]}..."
             )
 
+    # Unwrap {"segments": [...]} wrapper if the AI returns it
+    if isinstance(items, dict) and "segments" in items:
+        items = items["segments"]
     if not isinstance(items, list):
-        raise RuntimeError(
-            f"Expected JSON array, got {type(items).__name__}"
-        )
+        items = [items]
 
-    # Build segment dicts compatible with content-production
+    # ── Assemble segments ────────────────────────────────────────────
     segments = []
     for idx, item in enumerate(items):
-        title = item.get("title", f"Version {idx + 1}") if isinstance(item, dict) else f"Version {idx + 1}"
-        prompt_text = item.get(prompt_key, "") if isinstance(item, dict) else str(item)
+        if not isinstance(item, dict):
+            item = {"title": f"Version {idx + 1}", "text": str(item)}
+
         seg = {
             "index": idx,
-            "title": title.strip() if isinstance(title, str) else f"Version {idx + 1}",
-            "text": "",
-            "word_count": 0,
-            "char_count": 0,
-            prompt_key: prompt_text.strip() if isinstance(prompt_text, str) else str(prompt_text),
+            "title": item.get("title", f"Version {idx + 1}").strip(),
         }
+
+        # Include only the requested fields
+        if "text" in fields:
+            seg["text"] = item.get("text", "").strip() if isinstance(item.get("text"), str) else ""
+        if "image_prompt" in fields:
+            seg["image_prompt"] = item.get("image_prompt", "").strip() if isinstance(item.get("image_prompt"), str) else ""
+        if "video_prompt" in fields:
+            seg["video_prompt"] = item.get("video_prompt", "").strip() if isinstance(item.get("video_prompt"), str) else ""
+
         segments.append(seg)
 
     # Trim or pad to exact count
-    if len(segments) > count:
-        segments = segments[:count]
-    elif len(segments) < count:
+    if len(segments) > num_segments:
+        segments = segments[:num_segments]
+    elif len(segments) < num_segments:
         logger.warning(
-            "AI returned %d versions, expected %d — padding with duplicates",
-            len(segments), count,
+            "AI returned %d segments, expected %d — padding with placeholders",
+            len(segments), num_segments,
         )
-        while len(segments) < count:
-            last = segments[-1] if segments else {"title": f"Version {len(segments) + 1}", prompt_key: ""}
-            segments.append({
-                "index": len(segments),
-                "title": f"Version {len(segments) + 1}",
-                "text": "",
-                "word_count": 0,
-                "char_count": 0,
-                prompt_key: last.get(prompt_key, ""),
-            })
+        while len(segments) < num_segments:
+            seg = {"index": len(segments), "title": f"Version {len(segments) + 1}"}
+            for f in fields:
+                seg[f] = ""
+            segments.append(seg)
 
     logger.info(
-        "Generated %d %s prompt versions (%d total chars)",
-        len(segments), prompt_type,
-        sum(len(s.get(prompt_key, "")) for s in segments),
+        "Optimized %d segment(s) with fields: %s (%d total chars)",
+        len(segments), sorted(fields),
+        sum(len(str(s.get(f, ""))) for s in segments for f in fields),
     )
     return segments
 
 
-def format_output(segments: list[dict], fmt: str) -> str:
-    """Render segments as *fmt* (``"json"``, ``"md"``, or ``"text"``)."""
-    if fmt == "json":
-        return json.dumps(
-            {"total_segments": len(segments), "segments": segments},
-            ensure_ascii=False, indent=2,
-        )
-    if fmt == "md":
-        return _format_markdown(segments)
-    return _format_plain(segments)
+# ---------------------------------------------------------------------------
+# Output formatting
+# ---------------------------------------------------------------------------
+
+
+def format_output(segments: list[dict]) -> str:
+    """Render segments as JSON (the only output format)."""
+    return json.dumps(
+        {"total_segments": len(segments), "segments": segments},
+        ensure_ascii=False, indent=2,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -693,9 +697,6 @@ _AI_SPLIT_PROMPT = """You are a professional content editor. Process the followi
 ## Splitting
 {segments_rule}
 
-## Length limits
-{length_rule}
-
 ## Quality rules
 - Split ONLY at natural semantic boundaries (topic shifts, section transitions).
 - NEVER split mid-sentence.
@@ -703,8 +704,9 @@ _AI_SPLIT_PROMPT = """You are a professional content editor. Process the followi
 - When condensing: remove redundancy and filler first, merge related sentences,
   but preserve ALL key facts, the core message, tone, and writing style.
 - NEVER introduce new information or opinions.
-- Keep the same language as the input text.
+- Use the same language as the input text unless additional requirements specify otherwise.
 - Give each segment a short, descriptive title (2-6 words, same language as input).
+{extra_requirements_section}
 
 Return ONLY a valid JSON array of objects with keys "title" and "text".
 No other text, no markdown fences, no explanations.
@@ -717,10 +719,9 @@ No other text, no markdown fences, no explanations.
 def _ai_split(
     text: str,
     num_segments: Optional[int] = None,
-    max_words: Optional[int] = None,
-    max_chars: Optional[int] = None,
+    extra_requirements: str = "",
 ) -> list[dict]:
-    """Send everything to the AI in one prompt — split + condense."""
+    """Send everything to the AI in one prompt — split only, no condensing."""
 
     # ── Segments rule ────────────────────────────────────────────────
     if num_segments:
@@ -733,90 +734,104 @@ def _ai_split(
             f"{auto} for this {wc}-word article, use your judgment)."
         )
 
-    # ── Length rule ──────────────────────────────────────────────────
-    if max_words and max_chars:
-        length_rule = (
-            f"Each segment MUST be ≤ {max_words} words AND ≤ {max_chars} "
-            "characters. Condense any segment that exceeds either limit. "
-            "When condensing: remove redundancy and filler first, merge "
-            "related sentences, preserve key facts, core message, and tone."
-        )
-    elif max_words:
-        length_rule = (
-            f"Each segment MUST be ≤ {max_words} words. "
-            "Condense any segment that exceeds this limit. "
-            "When condensing: remove redundancy and filler first, merge "
-            "related sentences, preserve key facts, core message, and tone."
-        )
-    elif max_chars:
-        length_rule = (
-            f"Each segment MUST be ≤ {max_chars} characters. "
-            "Condense any segment that exceeds this limit. "
-            "When condensing: remove redundancy and filler first, merge "
-            "related sentences, preserve key facts, core message, and tone."
-        )
-    else:
-        length_rule = "No length limit — keep segments at their natural size."
+    # ── Extra requirements ────────────────────────────────────────────
+    extra_section = ""
+    if extra_requirements.strip():
+        extra_section = f"\n## Additional requirements\n{extra_requirements.strip()}"
 
-    # ── Call API ─────────────────────────────────────────────────────
-    prompt = _AI_SPLIT_PROMPT.format(
+    # ── Call API (with retry if segment count mismatches) ────────────
+    base_prompt = _AI_SPLIT_PROMPT.format(
         segments_rule=segments_rule,
-        length_rule=length_rule,
+        extra_requirements_section=extra_section,
         text=text,
     )
 
-    try:
-        resp = requests.post(
-            f"{TEXT_BASE_URL}/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {TEXT_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": TEXT_CHAT_MODEL,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "You are a precise content editor. Return ONLY valid JSON.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.3,
-                "max_tokens": 8192,
-            },
-            timeout=120,
+    max_attempts = 3
+    segments: list[dict] = []
+    current_prompt = base_prompt
+    for attempt in range(1, max_attempts + 1):
+        try:
+            resp = requests.post(
+                f"{TEXT_BASE_URL}/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {TEXT_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": TEXT_CHAT_MODEL,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You are a precise content editor. Return ONLY valid JSON.",
+                        },
+                        {"role": "user", "content": current_prompt},
+                    ],
+                    "temperature": 0.3 if attempt == 1 else 0.1,
+                    "max_tokens": 8192,
+                },
+                timeout=120,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+        except requests.RequestException as exc:
+            raise RuntimeError(f"AI API call failed: {exc}") from exc
+
+        raw = body["choices"][0]["message"]["content"].strip()
+
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+
+        try:
+            items = json.loads(raw)
+        except json.JSONDecodeError:
+            # Model sometimes returns comma-separated objects
+            # without enclosing brackets; try wrapping them
+            try:
+                items = json.loads("[" + raw + "]")
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    f"AI returned non-JSON response. Raw: {raw[:300]}..."
+                ) from exc
+
+        # Unwrap {"segments": [...]} wrapper if the AI returns it
+        if isinstance(items, dict) and "segments" in items:
+            items = items["segments"]
+        if not isinstance(items, list):
+            items = [items]
+
+        # ── Assemble segments ────────────────────────────────────────
+        segments = []
+        for idx, item in enumerate(items):
+            seg_text = item.get("text", "") if isinstance(item, dict) else str(item)
+            title = item.get("title", "") if isinstance(item, dict) else ""
+            seg = _make_segment(idx, seg_text.strip())
+            if title:
+                seg["title"] = title.strip()
+            segments.append(seg)
+
+        # Check if count matches (only when user specified a target)
+        if num_segments and len(segments) != num_segments and attempt < max_attempts:
+            logger.warning(
+                "AI returned %d segments, expected %d — retrying (attempt %d/%d)...",
+                len(segments), num_segments, attempt, max_attempts,
+            )
+            # Strengthen the prompt on retry
+            current_prompt = (
+                f"IMPORTANT: You MUST produce EXACTLY {num_segments} segments. "
+                f"Do NOT return fewer or more. This is a hard requirement.\n\n"
+            ) + base_prompt
+            continue
+
+        break
+
+    if num_segments and len(segments) != num_segments:
+        logger.warning(
+            "AI returned %d segments after %d attempt(s), expected %d — "
+            "returning available segments",
+            len(segments), attempt, num_segments,
         )
-        resp.raise_for_status()
-        body = resp.json()
-    except requests.RequestException as exc:
-        raise RuntimeError(f"AI API call failed: {exc}") from exc
-
-    raw = body["choices"][0]["message"]["content"].strip()
-
-    # Strip markdown code fences if present
-    if raw.startswith("```"):
-        raw = re.sub(r"^```(?:json)?\s*", "", raw)
-        raw = re.sub(r"\s*```$", "", raw)
-
-    try:
-        items = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            f"AI returned non-JSON response. Raw: {raw[:300]}..."
-        ) from exc
-
-    if not isinstance(items, list):
-        items = [items]
-
-    # ── Assemble segments ────────────────────────────────────────────
-    segments = []
-    for idx, item in enumerate(items):
-        seg_text = item.get("text", "") if isinstance(item, dict) else str(item)
-        title = item.get("title", "") if isinstance(item, dict) else ""
-        seg = _make_segment(idx, seg_text.strip())
-        if title:
-            seg["title"] = title.strip()
-        segments.append(seg)
 
     return segments
 
@@ -831,8 +846,6 @@ def _make_segment(index: int, text: str) -> dict:
         "index": index,
         "title": "",
         "text": text,
-        "word_count": _count_words(text),
-        "char_count": len(text),
     }
 
 
@@ -863,35 +876,3 @@ def _count_words(text: str) -> int:
 
     latin_words = sum(len(part.split()) for part in latin_parts)
     return cjk + latin_words
-
-
-def _format_markdown(segments: list[dict]) -> str:
-    lines = [
-        "# Text Split Result",
-        f"**Segments:** {len(segments)}",
-        "",
-    ]
-    for seg in segments:
-        title = seg.get("title") or f"Segment {seg['index'] + 1}"
-        lines.append("---")
-        lines.append("")
-        lines.append(f"## {title}")
-        lines.append(
-            f"**Words:** {seg['word_count']}  |  **Chars:** {seg['char_count']}"
-        )
-        lines.append("")
-        lines.append(seg["text"])
-        lines.append("")
-    return "\n".join(lines)
-
-
-def _format_plain(segments: list[dict]) -> str:
-    lines = []
-    for seg in segments:
-        title = seg.get("title") or f"Segment {seg['index'] + 1}"
-        lines.append(
-            f"【{title}】({seg['word_count']} words / {seg['char_count']} chars)"
-        )
-        lines.append(seg["text"])
-        lines.append("")
-    return "\n".join(lines)

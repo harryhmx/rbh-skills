@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """CLI entry point for content-production — generate images, video, and speech from
-text-optimizer segments JSON, single prompt files, and caption images with segment titles.
+text-optimizer segments JSON, and caption images with segment titles.
+
+All generation is batch-mode from segments JSON.  Single-asset generation from
+proprietary prompt files has been removed — use ``text-optimizer optimize`` to
+produce a 1-segment JSON instead.
 
 Usage:
     python scripts/cli.py image -i <segments.json> [-o <dir>] [--size WxH] [--prompt-key image_prompt]
     python scripts/cli.py video -i <segments.json> [-o <dir>] [--size WxH] [--num-frames N] [--frame-rate FPS] [--prompt-key video_prompt]
-    python scripts/cli.py speech -i <segments.json> [-o <dir>] [--prompt-key tts_prompt]
+    python scripts/cli.py speech -i <segments.json> [-o <dir>]
     python scripts/cli.py caption -i <segments.json> -d <image-dir> [-o <dir>] [--font FONT] [--font-size N]
-    python scripts/cli.py single -i <prompt-file.md|.txt>
 
 Examples:
     # Generate images from segments (default 1024x768)
@@ -22,17 +25,11 @@ Examples:
     # Custom video settings
     python scripts/cli.py video -i ucla-segments.json -o videos/ --size 1024x768 --num-frames 121 --frame-rate 24
 
-    # Generate speech from segments
+    # Generate speech from segments (uses text field)
     python scripts/cli.py speech -i ucla-segments.json -o audio/
 
     # Overlay titles onto generated images
     python scripts/cli.py caption -i ucla-segments.json -d images/ -o captioned/
-
-    # Generate a single image from a prompt file (from text-optimizer genprompt)
-    python scripts/cli.py single -i my-image-prompt.md
-
-    # Generate a single video from a prompt file
-    python scripts/cli.py single -i my-video-prompt.md
 """
 
 from __future__ import annotations
@@ -59,12 +56,9 @@ if str(_skill_dir) not in sys.path:
 from scripts.production import (  # noqa: E402
     caption_images,
     generate_images,
-    generate_single_image,
-    generate_single_video,
     generate_speech,
     generate_videos,
     load_segments_json,
-    parse_prompt_file,
 )
 
 
@@ -106,7 +100,10 @@ def cmd_image(args: argparse.Namespace) -> None:
 
 
 def cmd_speech(args: argparse.Namespace) -> None:
-    """Handle the ``speech`` subcommand."""
+    """Handle the ``speech`` subcommand.
+
+    Uses the segment's ``text`` field as speech content.
+    """
     # 1. Load segments
     try:
         segments = load_segments_json(args.input)
@@ -119,7 +116,6 @@ def cmd_speech(args: argparse.Namespace) -> None:
         results = generate_speech(
             segments,
             output_dir=args.output,
-            prompt_key=args.prompt_key,
         )
     except RuntimeError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -206,60 +202,9 @@ def cmd_caption(args: argparse.Namespace) -> None:
     }, ensure_ascii=False, indent=2))
 
 
-def cmd_single(args: argparse.Namespace) -> None:
-    """Handle the ``single`` subcommand — generate one image/video from a prompt file."""
-    input_path = Path(args.input)
-    if not input_path.exists() or not input_path.is_file():
-        print(f"Error: file not found: {args.input}", file=sys.stderr)
-        sys.exit(1)
-
-    # 1. Parse the prompt file
-    try:
-        meta = parse_prompt_file(input_path)
-    except (ValueError, RuntimeError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    prompt_type = meta["type"]
-    prompt = meta["prompt"]
-    size = meta.get("size", "1024x768")
-
-    # 2. Determine output path: same dir, same basename, different extension
-    if prompt_type == "image":
-        output_path = input_path.with_suffix(".png")
-    else:
-        output_path = input_path.with_suffix(".mp4")
-
-    logger.info("Generating single %s: %s → %s", prompt_type, input_path.name, output_path.name)
-
-    # 3. Generate
-    try:
-        if prompt_type == "image":
-            result = generate_single_image(prompt, size=size, output_path=output_path)
-        else:
-            num_frames = meta.get("num_frames", 121)
-            frame_rate = meta.get("frame_rate", 24)
-            result = generate_single_video(
-                prompt, size=size, num_frames=num_frames,
-                frame_rate=frame_rate, output_path=output_path,
-            )
-    except RuntimeError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    # 4. Print result
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-
-    if result.get("file_path"):
-        logger.info("Done: %s", result["file_path"])
-    else:
-        logger.error("Failed to generate %s", prompt_type)
-        sys.exit(1)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Content Production — generate images, video, and speech from segments JSON and prompt files",
+        description="Content Production — generate images, video, and speech from segments JSON",
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -333,11 +278,6 @@ def main() -> None:
         default="output",
         help="Output directory for generated audio (default: output/)",
     )
-    speech_parser.add_argument(
-        "--prompt-key",
-        default="tts_prompt",
-        help="Segment key containing the TTS prompt (default: tts_prompt)",
-    )
 
     # ---- caption ----
     caption_parser = subparsers.add_parser("caption", help="Overlay title text onto generated images")
@@ -368,17 +308,6 @@ def main() -> None:
         help="Font size in points (default: 36)",
     )
 
-    # ---- single ----
-    single_parser = subparsers.add_parser(
-        "single",
-        help="Generate a single image or video from a prompt file (proprietary format from text-optimizer genprompt)",
-    )
-    single_parser.add_argument(
-        "-i", "--input",
-        required=True,
-        help="Path to prompt file (.md or .txt, from text-optimizer genprompt)",
-    )
-
     args = parser.parse_args()
 
     if args.command == "image":
@@ -389,8 +318,6 @@ def main() -> None:
         cmd_speech(args)
     elif args.command == "caption":
         cmd_caption(args)
-    elif args.command == "single":
-        cmd_single(args)
     else:
         parser.print_help()
         sys.exit(1)
