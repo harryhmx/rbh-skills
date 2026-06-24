@@ -9,9 +9,9 @@ Backend skills for the RBH Agent learning platform. Each skill is an independent
 | **sms-auth** | API | SMS verification for authentication (send + verify) |
 | **story-generation** | API | AI-powered story generation with branching support based on Critical Thinking answers |
 | **project-creation** | Internal | Generate Project model data and sync to Supabase (Claude Code only) |
-| **text-optimizer** | Agent Skill | Split long text into semantically coherent segments with optional image/video/TTS prompt generation, or generate single/multiple image/video prompts from text (multi-version JSON for batch production) |
-| **content-production** | Agent Skill | Generate images/video via Agnes AI, speech via Fish Speech, caption images, and produce single assets from prompt files |
-| **video-converter** | Agent Skill | Composite images + audio into MP4 video segments, then concatenate into a final video |
+| **text-optimizer** | Agent Skill | **Optional** — Split long text into semantically coherent segments with optional image/video/TTS prompt generation. Only needed when user explicitly asks for text splitting/optimization; otherwise skip directly to content-production. |
+| **content-production** | Agent Skill | **Primary** — Generate images/video via Agnes AI, speech via Fish Speech, caption images. Default path: Local Agent creates JSON from user prompts directly, then content-production generates assets. |
+| **video-converter** | Agent Skill | Composite images + audio into MP4 video segments, then concatenate into a final video. Last step of the pipeline, receives assets from content-production. |
 
 ## Tech Stack
 
@@ -31,9 +31,19 @@ RBH Agent Frontend (Next.js, Vercel)
     └──> Supabase (PostgreSQL)
          ↑
     Claude Code ──> project-creation (Internal Skill)
-                    text-optimizer     (Agent Skill → content production pipeline, single + multi prompt gen)
-                    content-production (Agent Skill → image/video/speech generation)
-                    video-converter    (Agent Skill → video compositing + concat)
+    
+    Content Production Pipeline:
+      Local Agent (Claude Code / Codex)
+           │
+           ├── creates segments.json directly from user prompts (DEFAULT)
+           │
+           └── OR ──> text-optimizer (OPTIONAL, only when text splitting/optimization needed)
+                          │
+                          ▼
+                    content-production (image/video/speech generation)
+                          │
+                          ▼
+                    video-converter (video compositing + concat)
 ```
 
 ## Development

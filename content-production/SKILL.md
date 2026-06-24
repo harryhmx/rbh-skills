@@ -1,19 +1,28 @@
 ---
 name: content-production
-description: "Generate images, video, and speech audio from text-optimizer segment JSON files. Reads image_prompt/video_prompt fields for images/videos and text field for speech. Produces PNG images via Agnes AI, MP4 videos via Agnes AI, or MP3 audio via Fish Speech. Use when asked to 'generate images from segments', 'create videos from prompts', 'convert prompts to images/videos', or 'produce content from segments'."
-version: "0.4.0"
+description: "Generate images, video, and speech audio from structured segment JSON files. Works directly with prompt JSON files — the Local Agent (Claude Code, Codex, etc.) can create the JSON from user prompts without needing text-optimizer. Reads image_prompt/video_prompt fields for images/videos and text field for speech. Produces PNG images via Agnes AI, MP4 videos via Agnes AI, or MP3 audio via Fish Speech. Use when asked to 'generate images from prompts', 'create videos from descriptions', 'generate speech audio', 'convert prompts to images/videos', or 'produce content from segments'."
+version: "0.5.0"
 allowed-tools: ["Bash", "Read", "Write"]
 ---
 
 # Content Production
 
-Generates images, videos, and speech audio from structured segment JSON — the second step of the RBH content production pipeline, receiving output from `text-optimizer` and producing assets for `video-converter`.
+Generates images, videos, and speech audio from structured segment JSON — the **primary content generation step** of the RBH pipeline, producing assets for `video-converter`.
 
-All generation is **batch-mode from segments JSON files**. Single-asset generation from proprietary prompt files has been removed — use `text-optimizer optimize` to produce a 1-segment JSON instead.
+## Default path: Local Agent creates JSON directly
+
+When a user wants to generate images, videos, or speech from prompts, the **default path** is:
+
+1. **Local Agent (Claude Code / Codex / etc.) creates** a segments JSON file directly from user prompts
+2. **content-production reads** that JSON and generates the assets
+
+`text-optimizer` is only needed when the user **explicitly** asks for text splitting, text optimization (summarize/expand/refine), or AI-generated prompt creation from raw text. If the user already has prompts, skip `text-optimizer` entirely.
+
+All generation is **batch-mode from segments JSON files**. The JSON can come from either the Local Agent (direct) or `text-optimizer` (when text preprocessing is needed).
 
 ## What this skill does
 
-1. **Reads** a segments JSON file (from `text-optimizer` output)
+1. **Reads** a segments JSON file (created by Local Agent directly, or from `text-optimizer` output)
 2. **Extracts** the `image_prompt`, `video_prompt`, or `text` fields from each segment
 3. **Generates** images via Agnes AI, videos via Agnes AI, or audio via Fish Speech
 4. **Saves** files in index order as `000.png`, `000.mp4`, or `000.mp3`, ...
@@ -21,7 +30,17 @@ All generation is **batch-mode from segments JSON files**. Single-asset generati
 
 ## When to use it
 
-Trigger this skill when the user asks to:
+**Direct usage (default):** Trigger this skill when the user wants to generate content from prompts they already have. The Local Agent creates the JSON, then invokes the CLI:
+
+- "Generate images from these prompts / descriptions"
+- "Create a video based on this prompt"
+- "Turn these image descriptions into PNGs"
+- "Generate speech audio for this text"
+- "根据这些 prompt 生成图片 / 视频"
+- "帮我把这些描述转成图片 / 视频 / 音频"
+
+**Pipeline usage (with text-optimizer):** Also trigger when the user has already run `text-optimizer` and has a segments JSON file:
+
 - "Generate images from this segments JSON"
 - "Generate videos from these segments"
 - "Create illustrations/videos for these story segments"
@@ -32,9 +51,40 @@ Trigger this skill when the user asks to:
 
 ## When NOT to use it
 
-- **Text splitting / segmentation** — use `text-optimizer` instead
+- **Text splitting / segmentation** — use `text-optimizer` instead (only when user explicitly needs text preprocessing)
+- **Text optimization or AI prompt generation from raw text** — use `text-optimizer optimize` instead (only when user explicitly asks for it)
 - **Story generation** — use the `story-generation` FastAPI service
-- **Direct image generation without segments** — generate a 1-segment JSON via `text-optimizer optimize` first
+- **Compositing images + audio into video** — use `video-converter` instead
+
+## Creating segments JSON directly (Local Agent)
+
+When the user provides prompts directly (no `text-optimizer` needed), the Local Agent creates a segments JSON file:
+
+```json
+{
+  "total_segments": 2,
+  "segments": [
+    {
+      "index": 0,
+      "title": "Sunset over mountains",
+      "image_prompt": "A breathtaking sunset over snow-capped mountains, warm orange and pink sky, photorealistic, 4K"
+    },
+    {
+      "index": 1,
+      "title": "Forest stream",
+      "image_prompt": "A crystal-clear stream winding through a dense green forest, dappled sunlight, cinematic lighting"
+    }
+  ]
+}
+```
+
+Then pass this JSON to the CLI:
+
+```bash
+python scripts/cli.py image -i prompts.json -o images/
+```
+
+Each segment must have `index`, `title`. Include `image_prompt` for images, `video_prompt` for videos, or `text` for speech — whichever the user needs. The Local Agent fills these fields from the user's own prompts.
 
 ## How to invoke
 
@@ -67,7 +117,7 @@ python scripts/cli.py image -i ucla-segments.json -o images/ --size 512x512
 python scripts/cli.py video -i ucla-segments.json -o videos/
 
 # Custom video settings
-python scripts/cli.py video -i ucla-segments.json -o videos/ --size 1024x768 --num-frames 121 --frame-rate 24
+python scripts/cli.py video -i ucla-segments.json -o videos/ --size 1152x768 --num-frames 121 --frame-rate 24
 
 # Generate speech from segments (uses text field)
 python scripts/cli.py speech -i ucla-segments.json -o audio/
@@ -91,7 +141,7 @@ python scripts/cli.py caption -i ucla-segments.json -d images/ -o captioned/
 |----------|-------|-------------|---------|
 | `--input` | `-i` | Path to segments JSON file | (required) |
 | `--output` | `-o` | Output directory | `output/` |
-| `--size` | | Video size `WxH` (e.g. `1024x768`) | `1024x768` |
+| `--size` | | Video size `WxH` (e.g. `1152x768`) | `1152x768` |
 | `--num-frames` | | Number of frames (≤ 441, 8n+1) | `121` |
 | `--frame-rate` | | Frame rate in FPS (1–60) | `24` |
 | `--prompt-key` | | Segment key for the video prompt | `video_prompt` |
@@ -117,7 +167,35 @@ Speech generation uses the segment's `text` field as the speech content.
 
 ## Examples
 
-### Example 1: Full pipeline from text to images
+### Example 0: Direct from prompts (default path, no text-optimizer)
+
+Local Agent creates a segments JSON directly from user prompts:
+
+```json
+// prompts.json — created by Local Agent
+{
+  "total_segments": 2,
+  "segments": [
+    {
+      "index": 0,
+      "title": "Sunset mountains",
+      "image_prompt": "A breathtaking sunset over snow-capped mountains, warm orange and pink sky, photorealistic, 4K"
+    },
+    {
+      "index": 1,
+      "title": "Forest stream",
+      "image_prompt": "A crystal-clear stream winding through a dense green forest, dappled sunlight, cinematic lighting"
+    }
+  ]
+}
+```
+
+```bash
+# Generate images directly — no text-optimizer needed
+python scripts/cli.py image -i prompts.json -o images/
+```
+
+### Example 1: Pipeline from raw text (with text-optimizer, only when needed)
 
 ```bash
 # Step 1: Optimize text into segments with image prompts
@@ -155,14 +233,16 @@ images/
 }
 ```
 
-### Example 3: Full pipeline from text to videos
+### Example 3: Pipeline from raw text to videos (with text-optimizer, only when needed)
 
 ```bash
-# Step 1: Optimize text into segments with video prompts
+# Step 1 (optional): Optimize text into segments with video prompts
 python ../text-optimizer/scripts/cli.py optimize -i article.md -n 4 --fields text,video_prompt -o segments.json
 
+# If user already has prompts, skip Step 1 — Local Agent creates segments.json directly
+
 # Step 2: Generate videos
-python scripts/cli.py video -i segments.json -o videos/ --size 1024x768 --num-frames 121 --frame-rate 24
+python scripts/cli.py video -i segments.json -o videos/ --size 1152x768 --num-frames 121 --frame-rate 24
 ```
 
 Output:
@@ -174,12 +254,16 @@ videos/
 ├── 003.mp4   # Segment 3 video
 ```
 
-Video generation is asynchronous — each video task is submitted to Agnes AI, polled until complete (up to 15 min timeout), then downloaded. The JSON output includes `task_id` for each video result.
+Video generation is asynchronous — each video is submitted to Agnes AI, polled until complete (up to 15 min timeout), then downloaded. The JSON output includes `video_id` for each video result.
 
 ### Example 4: Speech generation
 
+**Direct (default):** Local Agent creates segments JSON with `text` fields directly from user input.
+
+**Pipeline:** If text needs splitting first:
+
 ```bash
-# Step 1: Split text into segments
+# Step 1 (optional): Split text into segments
 python ../text-optimizer/scripts/cli.py split -i article.md -n 4 -o segments.json
 
 # Step 2: Generate speech audio
@@ -210,7 +294,7 @@ Uses the `skills/.env` configuration:
 | `VIDEO_API_KEY` | Agnes AI API key | (from .env) |
 | `VIDEO_BASE_URL` | Agnes AI API base URL | `https://apihub.agnes-ai.com` |
 | `VIDEO_MODEL` | Video generation model | `agnes-video-v2.0` |
-| `VIDEO_SIZE` | Default video size (WxH) | `1024x768` |
+| `VIDEO_SIZE` | Default video size (WxH) | `1152x768` |
 | `VIDEO_NUM_FRAMES` | Default number of frames (≤ 441, 8n+1) | `121` |
 | `VIDEO_FRAME_RATE` | Default frame rate in FPS (1–60) | `24` |
 | `SPEECH_API_KEY` | SiliconFlow API key | (from .env) |
@@ -221,29 +305,38 @@ Uses the `skills/.env` configuration:
 ## Architecture
 
 ```
-text-optimizer output (segments.json)
+User Prompts
         │
-        └── content-production (CLI)
+        ├── Local Agent (default path)
+        │       │
+        │       └── creates segments.json directly from user prompts
+        │
+        └── text-optimizer (optional, only when text preprocessing needed)
                 │
-                ├── image ──> generate_images()
-                │               │
-                │               └── POST /v1/images/generations
-                │                       → Agnes AI → 000.png, 001.png, ...
-                │
-                ├── video ──> generate_videos()
-                │               │
-                │               ├── POST /v1/videos (create tasks)
-                │               ├── GET /v1/videos/{id} (parallel poll)
-                │               └── Download MP4 → 000.mp4, 001.mp4, ...
-                │
-                ├── speech ─> generate_speech()
-                │               │
-                │               └── SiliconFlow Fish Speech → 000.mp3, ...
-                │                   (uses text field)
-                │
-                └── caption ─> caption_images()
-                                │
-                                └── PIL (Pillow) — Overlay title text centered
+                └── outputs segments.json after splitting/optimization
+                        │
+                        ▼
+                content-production (CLI)
+                        │
+                        ├── image ──> generate_images()
+                        │               │
+                        │               └── POST /v1/images/generations
+                        │                       → Agnes AI → 000.png, 001.png, ...
+                        │
+                        ├── video ──> generate_videos()
+                        │               │
+                        │               ├── POST /v1/videos (create video)
+                        │               ├── GET /v1/videos/{video_id} (parallel poll)
+                        │               └── Download MP4 → 000.mp4, 001.mp4, ...
+                        │
+                        ├── speech ─> generate_speech()
+                        │               │
+                        │               └── SiliconFlow Fish Speech → 000.mp3, ...
+                        │                   (uses text field)
+                        │
+                        └── caption ─> caption_images()
+                                        │
+                                        └── PIL (Pillow) — Overlay title text centered
 ```
 
 ## Output consumed by

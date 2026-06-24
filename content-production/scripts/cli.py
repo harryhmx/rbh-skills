@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """CLI entry point for content-production — generate images, video, and speech from
-text-optimizer segments JSON, and caption images with segment titles.
+segments JSON, and caption images with segment titles.
 
-All generation is batch-mode from segments JSON.  Single-asset generation from
-proprietary prompt files has been removed — use ``text-optimizer optimize`` to
-produce a 1-segment JSON instead.
+All generation is batch-mode from segments JSON.  The JSON can be created directly
+by the Local Agent (Claude Code / Codex / etc.) from user prompts, or optionally
+via ``text-optimizer`` when text splitting/optimization is needed.
 
 Usage:
     python scripts/cli.py image -i <segments.json> [-o <dir>] [--size WxH] [--prompt-key image_prompt]
@@ -213,7 +213,7 @@ def main() -> None:
     image_parser.add_argument(
         "-i", "--input",
         required=True,
-        help="Path to segments JSON file (from text-optimizer)",
+        help="Path to segments JSON file (from Local Agent or text-optimizer)",
     )
     image_parser.add_argument(
         "-o", "--output",
@@ -236,7 +236,7 @@ def main() -> None:
     video_parser.add_argument(
         "-i", "--input",
         required=True,
-        help="Path to segments JSON file (from text-optimizer)",
+        help="Path to segments JSON file (from Local Agent or text-optimizer)",
     )
     video_parser.add_argument(
         "-o", "--output",
@@ -246,7 +246,7 @@ def main() -> None:
     video_parser.add_argument(
         "--size",
         default="1024x768",
-        help="Video size in WxH format (default: 1024x768)",
+        help="Video size in WxH format (default: 1152x768)",
     )
     video_parser.add_argument(
         "--num-frames",
@@ -271,7 +271,7 @@ def main() -> None:
     speech_parser.add_argument(
         "-i", "--input",
         required=True,
-        help="Path to segments JSON file (from text-optimizer)",
+        help="Path to segments JSON file (from Local Agent or text-optimizer)",
     )
     speech_parser.add_argument(
         "-o", "--output",
@@ -284,7 +284,7 @@ def main() -> None:
     caption_parser.add_argument(
         "-i", "--input",
         required=True,
-        help="Path to segments JSON file (from text-optimizer)",
+        help="Path to segments JSON file (from Local Agent or text-optimizer)",
     )
     caption_parser.add_argument(
         "-d", "--dir",

@@ -88,8 +88,10 @@ The concat output file is named ``<dirname>.mp4`` and placed in the **parent** d
 
 ### Example 1: Full pipeline — text to videos
 
+**Default path:** Local Agent creates segments JSON directly from user prompts (skip Step 1), then `content-production` generates images + speech, then `video-converter` composites.
+
 ```bash
-# Step 1: Split text and generate image + TTS prompts
+# Step 1 (OPTIONAL — only when text needs splitting/prompts):
 python ../text-optimizer/scripts/cli.py split -i article.md \
   --prompts --prompt-types image,tts -f json -o segments.json
 
@@ -172,32 +174,38 @@ No environment variables or API keys needed — pure local processing via ffmpeg
 ## Architecture
 
 ```
-content-production output (images/ + audio/)
+User Prompts
         │
-        ├── images/    (000.png, 001.png, ...)
-        └── audio/     (000.mp3, 001.mp3, ...)
+        ├── Local Agent (default) ──> creates segments.json directly
+        └── text-optimizer (optional) ──> segments.json from raw text
                 │
                 ▼
-        video-converter (CLI)
+        content-production (images/ + audio/)
                 │
-                ├── convert ──> composite_videos()
-                │               │
-                │               ├── Sort files by name
-                │               ├── Pair by position (0→0, 1→1, ...)
-                │               └── ffmpeg per pair
-                │                       │
-                │                       ├── -loop 1 (still image)
-                │                       ├── libx264 + stillimage tune
-                │                       ├── aac 192k audio
-                │                       └── → 000.mp4, 001.mp4, ...
-                │
-                └── concat ──> concat_videos()
-                                │
-                                ├── Sort videos by name
-                                ├── ffmpeg concat demuxer
-                                └── stream copy (no re-encode)
+                ├── images/    (000.png, 001.png, ...)
+                └── audio/     (000.mp3, 001.mp3, ...)
+                        │
+                        ▼
+                video-converter (CLI)
+                        │
+                        ├── convert ──> composite_videos()
+                        │               │
+                        │               ├── Sort files by name
+                        │               ├── Pair by position (0→0, 1→1, ...)
+                        │               └── ffmpeg per pair
+                        │                       │
+                        │                       ├── -loop 1 (still image)
+                        │                       ├── libx264 + stillimage tune
+                        │                       ├── aac 192k audio
+                        │                       └── → 000.mp4, 001.mp4, ...
+                        │
+                        └── concat ──> concat_videos()
                                         │
-                                        └── → <dirname>.mp4 (parent dir)
+                                        ├── Sort videos by name
+                                        ├── ffmpeg concat demuxer
+                                        └── stream copy (no re-encode)
+                                                │
+                                                └── → <dirname>.mp4 (parent dir)
 ```
 
 ## Output consumed by

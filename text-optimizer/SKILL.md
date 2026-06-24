@@ -7,7 +7,7 @@ allowed-tools: ["Bash", "Read", "Write"]
 
 # Text Optimizer
 
-Splits long text into semantically coherent segments, or transforms text (summarize, expand, refine) and generates image/video prompts — the entry point of the RBH content production pipeline.
+Splits long text into semantically coherent segments, or transforms text (summarize, expand, refine) and generates image/video prompts — an **optional pre-processing step** in the RBH content production pipeline. Not the default path: if the user already has prompts, skip directly to `content-production`.
 
 **Always AI-powered.** The full text + all requirements are sent to the AI in a single prompt. The model sees the whole picture and returns finished segments in one response.
 
@@ -36,12 +36,27 @@ Trigger this skill when the user asks to:
 - "Summarize / expand / refine this text"
 - "Generate image/video prompts from this text"
 
+## When to SKIP it (go directly to content-production)
+
+**Most content generation tasks do NOT need text-optimizer.** Skip this skill and use `content-production` directly when:
+
+- The user already has image/video prompts and just wants to generate content
+- The user says "generate images from these prompts" or "create a video of..."
+- The user provides specific visual/audio descriptions (not raw long-form text)
+- The Local Agent can directly create the segments JSON from user prompts
+
+Only use text-optimizer when the user **explicitly** asks for:
+- "Split / break / segment this text"
+- "Optimize / summarize / expand / refine this text"
+- "Generate image/video prompts from this article"
+
 ## When NOT to use it
 
 - **Code refactoring / splitting source files** — this skill is for natural language text, not code
 - **Translation** — this skill does not translate text
 - **File format conversion** (e.g., PDF → MD) — use `content-extractor` (A5, Stage 6)
 - **Short text** (< 100 words) for splitting — use `optimize` instead
+- **User already has specific prompts** — skip directly to `content-production`
 
 ## How to invoke
 
@@ -220,6 +235,11 @@ The Python CLI requires these environment variables (from `skills/.env` or syste
 
 ```
 User Input (text / file + requirements)
+        │
+        │  ┌─ User already has prompts? ── YES ──> Skip text-optimizer
+        │  │                                      Use content-production directly
+        │  │
+        │  └─ NO: raw text needs processing
         │
         ├── Native Claude Code ──> Claude reads SKILL.md, receives the full
         │                          text + requirements in one turn, outputs result

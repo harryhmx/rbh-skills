@@ -1,13 +1,13 @@
 """
-Content Production — generate images, video, and speech from text-optimizer segments JSON.
+Content Production — generate images, video, and speech from segments JSON.
 
 Images: Agnes AI (``agnes-image-2.1-flash``) via ``POST /v1/images/generations``.
 Videos: Agnes AI (``agnes-video-v2.0``) via ``POST /v1/videos`` + polling.
 Speech: Fish Speech via SiliconFlow OpenAI-compatible endpoint.
 
-All generation is batch-mode from segments JSON files.  Single-asset generation
-(proprietary prompt files) has been removed — use ``text-optimizer optimize``
-to produce a 1-segment JSON instead.
+All generation is batch-mode from segments JSON files.  The JSON can be created
+directly by the Local Agent (Claude Code / Codex / etc.) from user prompts, or
+optionally via ``text-optimizer`` when text splitting/optimization is needed.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ IMAGE_SIZE_DEFAULT = os.environ.get("IMAGE_SIZE", "1024x768")
 VIDEO_API_KEY = os.environ.get("VIDEO_API_KEY", "")
 VIDEO_BASE_URL = os.environ.get("VIDEO_BASE_URL", "https://apihub.agnes-ai.com")
 VIDEO_MODEL = os.environ.get("VIDEO_MODEL", "agnes-video-v2.0")
-VIDEO_SIZE_DEFAULT = os.environ.get("VIDEO_SIZE", "1024x768")
+VIDEO_SIZE_DEFAULT = os.environ.get("VIDEO_SIZE", "1152x768")
 VIDEO_NUM_FRAMES_DEFAULT = int(os.environ.get("VIDEO_NUM_FRAMES", "121"))
 VIDEO_FRAME_RATE_DEFAULT = float(os.environ.get("VIDEO_FRAME_RATE", "24"))
 VIDEO_POLL_TIMEOUT = int(os.environ.get("VIDEO_POLL_TIMEOUT", "900"))
@@ -104,7 +104,10 @@ def _download_with_retry(url: str, timeout: int = 60) -> bytes:
 
 
 def load_segments_json(path: str | Path) -> list[dict]:
-    """Read a text-optimizer output JSON and return its ``segments`` list."""
+    """Read a segments JSON file and return its ``segments`` list.
+
+    The JSON can come from the Local Agent (default) or text-optimizer (optional).
+    """
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     segments = data.get("segments", [])
     if not segments:
@@ -171,7 +174,7 @@ def _extract_video_urls(data: dict) -> list[str]:
 
 
 def _agnes_video_request(payload: dict) -> dict:
-    """Send a JSON request to the Agnes AI videos endpoint (create task)."""
+    """Send a JSON request to the Agnes AI videos endpoint (create video)."""
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         f"{VIDEO_BASE_URL}/v1/videos",
@@ -193,10 +196,10 @@ def _agnes_video_request(payload: dict) -> dict:
         raise RuntimeError(f"Agnes video request failed: {exc}") from exc
 
 
-def _get_video_task(task_id: str) -> dict:
-    """Fetch the current state of a single video task."""
+def _get_video(video_id: str) -> dict:
+    """Fetch the current state of a single video generation."""
     req = urllib.request.Request(
-        f"{VIDEO_BASE_URL}/v1/videos/{task_id}",
+        f"{VIDEO_BASE_URL}/v1/videos/{video_id}",
         method="GET",
         headers={
             "Authorization": f"Bearer {VIDEO_API_KEY}",
@@ -213,74 +216,74 @@ def _get_video_task(task_id: str) -> dict:
         raise RuntimeError(f"Video poll request failed: {exc}") from exc
 
 
-def _poll_all_video_tasks(
+def _poll_all_videos(
     pending: dict[str, dict],
     timeout: int,
     interval: int,
     on_completed: Callable[[str, dict], None] | None = None,
 ) -> dict[str, dict]:
-    """Poll multiple video tasks concurrently until all complete or fail.
+    """Poll multiple video generations concurrently until all complete or fail.
 
     Parameters
     ----------
     pending : dict
-        Map of ``task_id → {"index": int, "title": str}``.  Mutated in-place
+        Map of ``video_id → {"index": int, "title": str}``.  Mutated in-place
         (completed/failed entries are removed).
     timeout : int
         Total deadline in seconds from now.
     interval : int
         Seconds between polling rounds.
     on_completed : callable or None
-        Called as ``on_completed(task_id, response_data)`` for each task
+        Called as ``on_completed(video_id, response_data)`` for each video
         as soon as it completes.  Use this for immediate download.
 
     Returns
     -------
     dict
-        Map of ``task_id → response_dict`` for all completed tasks.
+        Map of ``video_id → response_dict`` for all completed videos.
     """
     deadline = time.time() + timeout
     completed: dict[str, dict] = {}
-    failed: dict[str, str] = {}  # task_id → error message
+    failed: dict[str, str] = {}  # video_id → error message
 
     while pending and time.time() < deadline:
-        task_ids = list(pending.keys())
+        video_ids = list(pending.keys())
         logger.info(
-            "Polling %d video task(s), %d completed, %d failed...",
-            len(task_ids), len(completed), len(failed),
+            "Polling %d video(s), %d completed, %d failed...",
+            len(video_ids), len(completed), len(failed),
         )
 
-        for tid in task_ids:
+        for vid in video_ids:
             try:
-                data = _get_video_task(tid)
+                data = _get_video(vid)
             except RuntimeError as exc:
-                failed[tid] = str(exc)
-                del pending[tid]
+                failed[vid] = str(exc)
+                del pending[vid]
                 continue
 
             if data.get("error"):
-                failed[tid] = f"API error: {data['error']}"
-                del pending[tid]
+                failed[vid] = f"API error: {data['error']}"
+                del pending[vid]
                 continue
 
             status = str(data.get("status", "")).lower()
             progress = data.get("progress")
             logger.info(
                 "  [%d] %s: status=%s progress=%s",
-                pending[tid]["index"], tid, status, progress,
+                pending[vid]["index"], vid, status, progress,
             )
 
             if status == "completed":
-                completed[tid] = data
-                del pending[tid]
+                completed[vid] = data
+                del pending[vid]
                 if on_completed:
                     try:
-                        on_completed(tid, data)
+                        on_completed(vid, data)
                     except Exception as exc:
-                        logger.warning("on_completed callback failed for %s: %s", tid, exc)
+                        logger.warning("on_completed callback failed for %s: %s", vid, exc)
             elif status == "failed":
-                failed[tid] = f"Task failed: {json.dumps(data)}"
-                del pending[tid]
+                failed[vid] = f"Video generation failed: {json.dumps(data)}"
+                del pending[vid]
 
         if not pending:
             break
@@ -289,12 +292,12 @@ def _poll_all_video_tasks(
             time.sleep(interval)
 
     if pending:
-        for tid in list(pending.keys()):
-            failed[tid] = f"Timed out after {timeout}s"
+        for vid in list(pending.keys()):
+            failed[vid] = f"Timed out after {timeout}s"
         pending.clear()
 
     if failed:
-        logger.warning("%d video task(s) failed/timed out: %s", len(failed), list(failed.keys()))
+        logger.warning("%d video(s) failed/timed out: %s", len(failed), list(failed.keys()))
 
     return completed
 
@@ -538,7 +541,7 @@ def generate_videos(
 ) -> list[dict]:
     """Generate a video for each segment using Agnes AI (agnes-video-v2.0).
 
-    All video tasks are **submitted first in batch**, then **polled
+    All videos are **submitted first in batch**, then **polled
     concurrently** (round-robin) until each completes or fails, and
     finally downloaded.  This means total wall-clock time is roughly
     the slowest single video, not the sum of all videos.
@@ -567,7 +570,7 @@ def generate_videos(
     -------
     list[dict]
         Each dict has ``index``, ``title``, ``file_path``, ``url``,
-        ``prompt``, and ``task_id`` keys.
+        ``prompt``, and ``video_id`` keys.
     """
     if not VIDEO_API_KEY:
         raise RuntimeError(
@@ -589,10 +592,10 @@ def generate_videos(
     total = len(sorted_segments)
 
     # ------------------------------------------------------------------
-    # Phase 1 — Submit all video creation tasks in batch
+    # Phase 1 — Submit all video generation requests in batch
     # ------------------------------------------------------------------
-    pending: dict[str, dict] = {}          # task_id → {index, title} for polling
-    task_meta: dict[str, dict] = {}        # task_id → {index, title, prompt, file_path}
+    pending: dict[str, dict] = {}          # video_id → {index, title} for polling
+    video_meta: dict[str, dict] = {}       # video_id → {index, title, prompt, file_path}
     submit_errors: dict[int, dict] = {}    # index → result (skipped / failed submit)
 
     for seg in sorted_segments:
@@ -604,7 +607,7 @@ def generate_videos(
             logger.warning("[%d/%d] No prompt for segment %d, skipping", idx + 1, total, idx)
             submit_errors[idx] = {
                 "index": idx, "title": title, "file_path": None,
-                "url": None, "prompt": prompt, "task_id": None,
+                "url": None, "prompt": prompt, "video_id": None,
                 "error": f"No '{prompt_key}' field",
             }
             continue
@@ -619,25 +622,25 @@ def generate_videos(
                 "frame_rate": frame_rate,
             }
             logger.info(
-                "[%d/%d] Submitting video task for '%s' (%dx%d, %d frames, %.0f fps)...",
+                "[%d/%d] Submitting video generation for '%s' (%dx%d, %d frames, %.0f fps)...",
                 idx + 1, total, title, width, height, num_frames, frame_rate,
             )
 
             data = _agnes_video_request(payload)
-            task_id = str(data.get("id", ""))
+            video_id = str(data.get("id", ""))
 
-            if not task_id:
-                logger.warning("[%d/%d] No task ID in response, skipping", idx + 1, total)
+            if not video_id:
+                logger.warning("[%d/%d] No video ID in response, skipping", idx + 1, total)
                 submit_errors[idx] = {
                     "index": idx, "title": title, "file_path": None,
-                    "url": None, "prompt": prompt, "task_id": None,
-                    "error": "No task ID in response",
+                    "url": None, "prompt": prompt, "video_id": None,
+                    "error": "No video ID in response",
                 }
                 continue
 
-            logger.info("[%d/%d] Task created: %s", idx + 1, total, task_id)
-            pending[task_id] = {"index": idx, "title": title}
-            task_meta[task_id] = {
+            logger.info("[%d/%d] Video created: %s", idx + 1, total, video_id)
+            pending[video_id] = {"index": idx, "title": title}
+            video_meta[video_id] = {
                 "index": idx,
                 "title": title,
                 "prompt": prompt,
@@ -646,27 +649,27 @@ def generate_videos(
             time.sleep(0.5)  # brief pause between submissions to avoid rate limits
 
         except Exception as exc:
-            logger.error("[%d/%d] Failed to submit video task: %s", idx + 1, total, exc)
+            logger.error("[%d/%d] Failed to submit video generation: %s", idx + 1, total, exc)
             submit_errors[idx] = {
                 "index": idx, "title": title, "file_path": None,
-                "url": None, "prompt": prompt, "task_id": None,
-                "error": f"Task submission failed: {exc}",
+                "url": None, "prompt": prompt, "video_id": None,
+                "error": f"Video submission failed: {exc}",
             }
 
     logger.info(
-        "Submitted %d tasks, %d skipped → now polling all concurrently",
+        "Submitted %d videos, %d skipped → now polling all concurrently",
         len(pending), len(submit_errors),
     )
 
     # ------------------------------------------------------------------
-    # Phase 2 — Poll all tasks concurrently; download each video IMMEDIATELY
-    #           as soon as it completes (no waiting for slow tasks)
+    # Phase 2 — Poll all videos concurrently; download each video IMMEDIATELY
+    #           as soon as it completes (no waiting for slow videos)
     # ------------------------------------------------------------------
     final_results: list[dict] = []
 
-    def _download_on_complete(tid: str, data: dict) -> None:
-        """Called as soon as a task completes — download the video now."""
-        meta = task_meta.get(tid)
+    def _download_on_complete(vid: str, data: dict) -> None:
+        """Called as soon as a video completes — download the video now."""
+        meta = video_meta.get(vid)
         if not meta:
             return
         idx = meta["index"]
@@ -678,10 +681,10 @@ def generate_videos(
         try:
             urls = _extract_video_urls(data)
             if not urls:
-                logger.warning("[%d] No video URL for task %s", idx, tid)
+                logger.warning("[%d] No video URL for video %s", idx, vid)
                 final_results.append({
                     "index": idx, "title": title, "file_path": None,
-                    "url": None, "prompt": prompt, "task_id": tid,
+                    "url": None, "prompt": prompt, "video_id": vid,
                     "error": "No video URL in completed response",
                 })
                 return
@@ -709,24 +712,24 @@ def generate_videos(
             "file_path": str(file_path.resolve()) if url else None,
             "url": url,
             "prompt": prompt,
-            "task_id": tid,
+            "video_id": vid,
         })
 
-    completed_data = _poll_all_video_tasks(
+    completed_data = _poll_all_videos(
         pending, VIDEO_POLL_TIMEOUT, VIDEO_POLL_INTERVAL,
         on_completed=_download_on_complete,
     )
 
-    # Any tasks still in pending at this point are failures (timed out or failed)
-    for task_id, _meta in pending.items():
-        if task_id in task_meta:
-            submit_errors[task_meta[task_id]["index"]] = {
-                "index": task_meta[task_id]["index"],
-                "title": task_meta[task_id]["title"],
+    # Any videos still in pending at this point are failures (timed out or failed)
+    for video_id, _meta in pending.items():
+        if video_id in video_meta:
+            submit_errors[video_meta[video_id]["index"]] = {
+                "index": video_meta[video_id]["index"],
+                "title": video_meta[video_id]["title"],
                 "file_path": None, "url": None,
-                "prompt": task_meta[task_id]["prompt"],
-                "task_id": task_id,
-                "error": "Task did not complete within timeout",
+                "prompt": video_meta[video_id]["prompt"],
+                "video_id": video_id,
+                "error": "Video did not complete within timeout",
             }
 
     # Merge submit errors
