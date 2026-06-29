@@ -2,9 +2,8 @@
 """CLI entry point for content-production — generate images, video, and speech from
 segments JSON, and caption images with segment titles.
 
-All generation is batch-mode from segments JSON.  The JSON can be created directly
-by the Local Agent (Claude Code / Codex / etc.) from user prompts, or optionally
-via ``text-optimizer`` when text splitting/optimization is needed.
+All generation is batch-mode from segments JSON.  The JSON is created directly
+by the Local Agent (Claude Code / Codex / etc.) from user prompts.
 
 Usage:
     python scripts/cli.py image -i <segments.json> [-o <dir>] [--size WxH] [--prompt-key image_prompt]
@@ -53,13 +52,11 @@ _skill_dir = Path(__file__).resolve().parents[1]
 if str(_skill_dir) not in sys.path:
     sys.path.insert(0, str(_skill_dir))
 
-from scripts.production import (  # noqa: E402
-    caption_images,
-    generate_images,
-    generate_speech,
-    generate_videos,
-    load_segments_json,
-)
+from scripts.common import load_segments_json       # noqa: E402
+from scripts.images import generate_images          # noqa: E402
+from scripts.videos import generate_videos          # noqa: E402
+from scripts.speech import generate_speech          # noqa: E402
+from scripts.captions import caption_images         # noqa: E402
 
 
 def cmd_image(args: argparse.Namespace) -> None:
@@ -213,7 +210,7 @@ def main() -> None:
     image_parser.add_argument(
         "-i", "--input",
         required=True,
-        help="Path to segments JSON file (from Local Agent or text-optimizer)",
+        help="Path to segments JSON file (from Local Agent)",
     )
     image_parser.add_argument(
         "-o", "--output",
@@ -236,7 +233,7 @@ def main() -> None:
     video_parser.add_argument(
         "-i", "--input",
         required=True,
-        help="Path to segments JSON file (from Local Agent or text-optimizer)",
+        help="Path to segments JSON file (from Local Agent)",
     )
     video_parser.add_argument(
         "-o", "--output",
@@ -271,7 +268,7 @@ def main() -> None:
     speech_parser.add_argument(
         "-i", "--input",
         required=True,
-        help="Path to segments JSON file (from Local Agent or text-optimizer)",
+        help="Path to segments JSON file (from Local Agent)",
     )
     speech_parser.add_argument(
         "-o", "--output",
@@ -284,7 +281,7 @@ def main() -> None:
     caption_parser.add_argument(
         "-i", "--input",
         required=True,
-        help="Path to segments JSON file (from Local Agent or text-optimizer)",
+        help="Path to segments JSON file (from Local Agent)",
     )
     caption_parser.add_argument(
         "-d", "--dir",

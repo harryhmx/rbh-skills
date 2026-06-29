@@ -33,7 +33,6 @@ Trigger this skill when the user asks to:
 
 - **Image generation** — use `content-production` instead
 - **Audio/TTS generation** — use `content-production` instead
-- **Text splitting / prompt generation** — use `text-optimizer` instead
 - **Complex video editing** (transitions, multiple clips, effects) — out of scope for v0.1; use a dedicated video editor
 - **Subtitle/closed-caption generation** — planned for a future version
 
@@ -88,14 +87,10 @@ The concat output file is named ``<dirname>.mp4`` and placed in the **parent** d
 
 ### Example 1: Full pipeline — text to videos
 
-**Default path:** Local Agent creates segments JSON directly from user prompts (skip Step 1), then `content-production` generates images + speech, then `video-converter` composites.
+**Path:** Local Agent creates segments JSON directly from user prompts, then `content-production` generates images + speech, then `video-converter` composites.
 
 ```bash
-# Step 1 (OPTIONAL — only when text needs splitting/prompts):
-python ../text-optimizer/scripts/cli.py split -i article.md \
-  --prompts --prompt-types image,tts -f json -o segments.json
-
-# Step 2: Generate images and speech
+# Step 1: Generate images and speech
 python ../content-production/scripts/cli.py image -i segments.json -o images/
 python ../content-production/scripts/cli.py speech -i segments.json -o audio/
 
@@ -176,8 +171,7 @@ No environment variables or API keys needed — pure local processing via ffmpeg
 ```
 User Prompts
         │
-        ├── Local Agent (default) ──> creates segments.json directly
-        └── text-optimizer (optional) ──> segments.json from raw text
+        └── Local Agent ──> creates segments.json directly
                 │
                 ▼
         content-production (images/ + audio/)

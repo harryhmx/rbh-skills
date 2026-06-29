@@ -1,6 +1,6 @@
 ---
 name: content-production
-description: "Generate images, video, and speech audio from structured segment JSON files. Works directly with prompt JSON files — the Local Agent (Claude Code, Codex, etc.) can create the JSON from user prompts without needing text-optimizer. Reads image_prompt/video_prompt fields for images/videos and text field for speech. Produces PNG images via Agnes AI, MP4 videos via Agnes AI, or MP3 audio via Fish Speech. Use when asked to 'generate images from prompts', 'create videos from descriptions', 'generate speech audio', 'convert prompts to images/videos', or 'produce content from segments'."
+description: "Generate images, video, and speech audio from structured segment JSON files. The Local Agent (Claude Code, Codex, etc.) creates the JSON from user prompts directly. Reads image_prompt/video_prompt fields for images/videos and text field for speech. Produces PNG images via Agnes AI, MP4 videos via Agnes AI, or MP3 audio via Fish Speech. Use when asked to 'generate images from prompts', 'create videos from descriptions', 'generate speech audio', 'convert prompts to images/videos', or 'produce content from segments'."
 version: "0.5.0"
 allowed-tools: ["Bash", "Read", "Write"]
 ---
@@ -11,18 +11,16 @@ Generates images, videos, and speech audio from structured segment JSON — the 
 
 ## Default path: Local Agent creates JSON directly
 
-When a user wants to generate images, videos, or speech from prompts, the **default path** is:
+When a user wants to generate images, videos, or speech from prompts, the **only path** is:
 
 1. **Local Agent (Claude Code / Codex / etc.) creates** a segments JSON file directly from user prompts
 2. **content-production reads** that JSON and generates the assets
 
-`text-optimizer` is only needed when the user **explicitly** asks for text splitting, text optimization (summarize/expand/refine), or AI-generated prompt creation from raw text. If the user already has prompts, skip `text-optimizer` entirely.
-
-All generation is **batch-mode from segments JSON files**. The JSON can come from either the Local Agent (direct) or `text-optimizer` (when text preprocessing is needed).
+All generation is **batch-mode from segments JSON files** created by the Local Agent.
 
 ## What this skill does
 
-1. **Reads** a segments JSON file (created by Local Agent directly, or from `text-optimizer` output)
+1. **Reads** a segments JSON file (created by Local Agent)
 2. **Extracts** the `image_prompt`, `video_prompt`, or `text` fields from each segment
 3. **Generates** images via Agnes AI, videos via Agnes AI, or audio via Fish Speech
 4. **Saves** files in index order as `000.png`, `000.mp4`, or `000.mp3`, ...
@@ -39,26 +37,17 @@ All generation is **batch-mode from segments JSON files**. The JSON can come fro
 - "根据这些 prompt 生成图片 / 视频"
 - "帮我把这些描述转成图片 / 视频 / 音频"
 
-**Pipeline usage (with text-optimizer):** Also trigger when the user has already run `text-optimizer` and has a segments JSON file:
-
-- "Generate images from this segments JSON"
-- "Generate videos from these segments"
-- "Create illustrations/videos for these story segments"
-- "Convert image/video prompts to actual images/videos"
-- "Produce content assets from text-optimizer output"
-- "Batch generate images/videos from prompts"
-- "Generate speech audio from these segments"
-
 ## When NOT to use it
 
-- **Text splitting / segmentation** — use `text-optimizer` instead (only when user explicitly needs text preprocessing)
-- **Text optimization or AI prompt generation from raw text** — use `text-optimizer optimize` instead (only when user explicitly asks for it)
+- **Text splitting / segmentation** — Local Agent handles this natively
+- **Text optimization or prompt generation from raw text** — Local Agent handles this natively
 - **Story generation** — use the `story-generation` FastAPI service
 - **Compositing images + audio into video** — use `video-converter` instead
+- **Writing MD articles** — Local Agent writes articles directly (see `references/article-guide.md`); content-production only handles media generation
 
 ## Creating segments JSON directly (Local Agent)
 
-When the user provides prompts directly (no `text-optimizer` needed), the Local Agent creates a segments JSON file:
+The Local Agent creates a segments JSON file directly from user prompts:
 
 ```json
 {
@@ -167,7 +156,7 @@ Speech generation uses the segment's `text` field as the speech content.
 
 ## Examples
 
-### Example 0: Direct from prompts (default path, no text-optimizer)
+### Example 1: Direct from prompts (default path)
 
 Local Agent creates a segments JSON directly from user prompts:
 
@@ -191,18 +180,8 @@ Local Agent creates a segments JSON directly from user prompts:
 ```
 
 ```bash
-# Generate images directly — no text-optimizer needed
+# Generate images directly
 python scripts/cli.py image -i prompts.json -o images/
-```
-
-### Example 1: Pipeline from raw text (with text-optimizer, only when needed)
-
-```bash
-# Step 1: Optimize text into segments with image prompts
-python ../text-optimizer/scripts/cli.py optimize -i article.md -n 4 --fields text,image_prompt -o segments.json
-
-# Step 2: Generate images
-python scripts/cli.py image -i segments.json -o images/
 ```
 
 Output:
@@ -233,15 +212,11 @@ images/
 }
 ```
 
-### Example 3: Pipeline from raw text to videos (with text-optimizer, only when needed)
+### Example 3: Generate videos from segments
+
+Local Agent creates segments JSON with `video_prompt` fields, then:
 
 ```bash
-# Step 1 (optional): Optimize text into segments with video prompts
-python ../text-optimizer/scripts/cli.py optimize -i article.md -n 4 --fields text,video_prompt -o segments.json
-
-# If user already has prompts, skip Step 1 — Local Agent creates segments.json directly
-
-# Step 2: Generate videos
 python scripts/cli.py video -i segments.json -o videos/ --size 1152x768 --num-frames 121 --frame-rate 24
 ```
 
@@ -258,15 +233,10 @@ Video generation is asynchronous — each video is submitted to Agnes AI, polled
 
 ### Example 4: Speech generation
 
-**Direct (default):** Local Agent creates segments JSON with `text` fields directly from user input.
-
-**Pipeline:** If text needs splitting first:
+Local Agent creates segments JSON with `text` fields directly from user input.
 
 ```bash
-# Step 1 (optional): Split text into segments
-python ../text-optimizer/scripts/cli.py split -i article.md -n 4 -o segments.json
-
-# Step 2: Generate speech audio
+# Generate speech audio
 python scripts/cli.py speech -i segments.json -o audio/
 ```
 
@@ -307,13 +277,9 @@ Uses the `skills/.env` configuration:
 ```
 User Prompts
         │
-        ├── Local Agent (default path)
-        │       │
-        │       └── creates segments.json directly from user prompts
-        │
-        └── text-optimizer (optional, only when text preprocessing needed)
+        └── Local Agent
                 │
-                └── outputs segments.json after splitting/optimization
+                └── creates segments.json directly from user prompts
                         │
                         ▼
                 content-production (CLI)
@@ -341,7 +307,7 @@ User Prompts
 
 ## Output consumed by
 
-- **video-converter (A3)**: receives images + audio for video synthesis
+- **video-converter**: receives images + audio for video synthesis
 - **Direct publishing**: images published as article illustrations
 - **Manual editing**: images and audio files for further processing
 
