@@ -9,7 +9,8 @@ Backend skills for the RBH Agent learning platform. Each skill is an independent
 | **sms-auth** | API | SMS verification for authentication (send + verify) |
 | **story-generation** | API | AI-powered story generation with branching support based on Critical Thinking answers |
 | **project-creation** | Internal | Generate Project model data and sync to Supabase (Claude Code only) |
-| **content-production** | Agent Skill | **Primary** — Generate images/video via Agnes AI, speech via Fish Speech, caption images. Local Agent creates JSON from user prompts directly, then content-production generates assets. |
+| **content-production** | Agent Skill | **A1** — Generate images/video via Agnes AI, speech via Fish Speech, caption images. Local Agent creates or edits TXT/MD/JSON/... files from user prompts directly, then content-production generates assets. |
+| **media-composer** | Agent Skill | **A2** — Media editing toolkit. v0.1: STT transcription via MLX Whisper (local Apple Silicon). v0.2+: ffmpeg editing toolbox (trim, extract-audio, subtitle-burn, stitch, concat, etc.). |
 | **video-converter** | Agent Skill | Composite images + audio into MP4 video segments, then concatenate into a final video. Last step of the pipeline, receives assets from content-production. |
 
 ## Tech Stack
@@ -34,20 +35,25 @@ RBH Agent Frontend (Next.js, Vercel)
     Content Production Pipeline:
       Local Agent (Claude Code / Codex)
            │
-           └── creates segments.json directly from user prompts
-                  │
-                  ▼
-            content-production (image/video/speech generation)
-                  │
-                  ▼
-            video-converter (video compositing + concat)
+           ├── creates segments.json ──> content-production (image/video/speech)
+           │                                     │
+           │                                     ▼
+           │                               video-converter (compositing + concat)
+           │
+           └── records audio / shoots video ──> media-composer (STT transcribe)
+                                                        │
+                                                        ▼
+                                                  transcript.md → Agent 整理 → 文章
 ```
 
 ## Development
 
 ```bash
-# Install dependencies
+# Server deployment (Railway / VPS) — minimal cross-platform deps
 pip install -r requirements.txt
+
+# Local Agent development (Mac) — includes mlx-whisper, torch, etc.
+pip install -r requirements-local.txt
 
 # Run development server
 uvicorn server:app --reload --host 0.0.0.0 --port 8000

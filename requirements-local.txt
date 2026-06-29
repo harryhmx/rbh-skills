@@ -1,0 +1,21 @@
+# Local Agent extras — Mac / Apple Silicon only.
+# NOT for Railway or VPS deployment (pulls torch, mlx-metal, etc.).
+#
+# Usage:
+#   pip install -r requirements-local.txt
+#
+# This file inherits everything from requirements.txt and adds local-only deps.
+
+-r requirements.txt
+
+# ---------------------------------------------------------------------------
+# STT — local Whisper (Phase 3.2 v0.1)
+# ---------------------------------------------------------------------------
+mlx-whisper>=0.4.0          # → torch, mlx, mlx-metal, numba, scipy, numpy
+
+# ---------------------------------------------------------------------------
+# v0.2+ (future — uncomment when needed)
+# ---------------------------------------------------------------------------
+# moviepy                     # video compositing (v0.3 Vlog)
+# manim                       # math animations (v0.3 HarryMath)
+# pytesseract                 # OCR for media-director (A3 v0.2)
