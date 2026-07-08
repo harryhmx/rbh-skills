@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""CLI entry point for content-production — generate images, video, and speech from
-segments JSON, and caption images with segment titles.
+"""CLI entry point for content-production — generate images, video, and speech
+from segments JSON, and extract text / convert documents to Markdown.
 
-All generation is batch-mode from segments JSON.  The JSON is created directly
-by the Local Agent (Claude Code / Codex / etc.) from user prompts.
+All media generation is batch-mode from segments JSON.  The JSON is created
+directly by the Local Agent (Claude Code / Codex / etc.) from user prompts.
+``extract`` / ``convert`` instead take a single source document.
 
 Usage:
-    python scripts/cli.py image -i <segments.json> [-o <dir>] [--size WxH] [--prompt-key image_prompt]
-    python scripts/cli.py video -i <segments.json> [-o <dir>] [--size WxH] [--num-frames N] [--frame-rate FPS] [--prompt-key video_prompt]
-    python scripts/cli.py speech -i <segments.json> [-o <dir>]
-    python scripts/cli.py caption -i <segments.json> -d <image-dir> [-o <dir>] [--font FONT] [--font-size N]
+    python scripts/cli.py image   -i <segments.json> [-o <dir>] [--size WxH] [--prompt-key image_prompt]
+    python scripts/cli.py video   -i <segments.json> [-o <dir>] [--size WxH] [--num-frames N] [--frame-rate FPS] [--prompt-key video_prompt]
+    python scripts/cli.py speech  -i <segments.json> [-o <dir>]
+    python scripts/cli.py extract -i <file> [-o <out.txt>] [--range N-M] [--format docx|pdf]
+    python scripts/cli.py convert -i <file> [-o <out.md>]  [--format docx]
 
 Examples:
     # Generate images from segments (default 1024x768)
@@ -27,8 +29,15 @@ Examples:
     # Generate speech from segments (uses text field)
     python scripts/cli.py speech -i ucla-segments.json -o audio/
 
-    # Overlay titles onto generated images
-    python scripts/cli.py caption -i ucla-segments.json -d images/ -o captioned/
+    # Extract plain text (full document)
+    python scripts/cli.py extract -i report.docx -o report.txt
+    python scripts/cli.py extract -i paper.pdf -o paper.txt
+
+    # Extract a page/paragraph range (1-indexed, inclusive)
+    python scripts/cli.py extract -i paper.pdf --range 2-5 -o paper-excerpt.txt
+
+    # Convert to structured Markdown
+    python scripts/cli.py convert -i report.docx -o report.md
 """
 
 from __future__ import annotations
@@ -56,7 +65,8 @@ from scripts.common import load_segments_json       # noqa: E402
 from scripts.images import generate_images          # noqa: E402
 from scripts.videos import generate_videos          # noqa: E402
 from scripts.speech import generate_speech          # noqa: E402
-from scripts.captions import caption_images         # noqa: E402
+from scripts.extract import extract_text            # noqa: E402
+from scripts.convert import convert_to_md           # noqa: E402
 
 
 def cmd_image(args: argparse.Namespace) -> None:
@@ -167,36 +177,42 @@ def cmd_video(args: argparse.Namespace) -> None:
     }, ensure_ascii=False, indent=2))
 
 
-def cmd_caption(args: argparse.Namespace) -> None:
-    """Handle the ``caption`` subcommand — overlay titles onto images."""
-    # 1. Load segments
-    try:
-        segments = load_segments_json(args.input)
-    except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+def _write_text_output(text: str, output: str | None) -> None:
+    """Write *text* to the *output* file (creating parent dirs) or stdout."""
+    if output:
+        out_path = Path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(text, encoding="utf-8")
+        print(f"Saved: {out_path.resolve()}")
+    else:
+        print(text)
 
-    # 2. Caption images
+
+def cmd_extract(args: argparse.Namespace) -> None:
+    """Handle the ``extract`` subcommand — dump plain text from a document."""
     try:
-        results = caption_images(
-            segments,
-            image_dir=args.dir,
-            output_dir=args.output,
-            font_path=args.font,
-            font_size=args.font_size,
+        text = extract_text(
+            input_path=args.input,
+            fmt=args.format,
+            range_spec=args.range,
         )
-    except Exception as exc:
+    except (FileNotFoundError, ValueError, NotImplementedError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
+    _write_text_output(text, args.output)
 
-    # 3. Print summary
-    succeeded = sum(1 for r in results if r.get("output"))
-    print(json.dumps({
-        "total": len(results),
-        "succeeded": succeeded,
-        "failed": len(results) - succeeded,
-        "results": results,
-    }, ensure_ascii=False, indent=2))
+
+def cmd_convert(args: argparse.Namespace) -> None:
+    """Handle the ``convert`` subcommand — convert a document to Markdown."""
+    try:
+        text = convert_to_md(
+            input_path=args.input,
+            fmt=args.format,
+        )
+    except (FileNotFoundError, ValueError, NotImplementedError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    _write_text_output(text, args.output)
 
 
 def main() -> None:
@@ -276,33 +292,50 @@ def main() -> None:
         help="Output directory for generated audio (default: output/)",
     )
 
-    # ---- caption ----
-    caption_parser = subparsers.add_parser("caption", help="Overlay title text onto generated images")
-    caption_parser.add_argument(
+    # ---- extract ----
+    extract_parser = subparsers.add_parser(
+        "extract", help="Extract plain text from DOCX/PDF (no formatting)"
+    )
+    extract_parser.add_argument(
         "-i", "--input",
         required=True,
-        help="Path to segments JSON file (from Local Agent)",
+        help="Path to source document (docx, pdf)",
     )
-    caption_parser.add_argument(
-        "-d", "--dir",
-        required=True,
-        help="Directory containing PNG images named {index:03d}.png",
-    )
-    caption_parser.add_argument(
+    extract_parser.add_argument(
         "-o", "--output",
         default=None,
-        help="Output directory for captioned images (omit to overwrite originals)",
+        help="Output .txt file (prints to stdout if omitted)",
     )
-    caption_parser.add_argument(
-        "--font",
+    extract_parser.add_argument(
+        "--range",
         default=None,
-        help="Path to .ttf/.ttc font file (auto-detected if omitted)",
+        help="1-indexed inclusive range: N, N-M, N-, -M "
+             "(paragraphs for docx, pages for pdf)",
     )
-    caption_parser.add_argument(
-        "--font-size",
-        type=int,
-        default=36,
-        help="Font size in points (default: 36)",
+    extract_parser.add_argument(
+        "--format",
+        default=None,
+        help="Force input format (docx, pdf); inferred from extension if omitted",
+    )
+
+    # ---- convert ----
+    convert_parser = subparsers.add_parser(
+        "convert", help="Convert DOCX to structured Markdown"
+    )
+    convert_parser.add_argument(
+        "-i", "--input",
+        required=True,
+        help="Path to source document (docx)",
+    )
+    convert_parser.add_argument(
+        "-o", "--output",
+        default=None,
+        help="Output .md file (prints to stdout if omitted)",
+    )
+    convert_parser.add_argument(
+        "--format",
+        default=None,
+        help="Force input format (docx); inferred from extension if omitted",
     )
 
     args = parser.parse_args()
@@ -313,8 +346,10 @@ def main() -> None:
         cmd_video(args)
     elif args.command == "speech":
         cmd_speech(args)
-    elif args.command == "caption":
-        cmd_caption(args)
+    elif args.command == "extract":
+        cmd_extract(args)
+    elif args.command == "convert":
+        cmd_convert(args)
     else:
         parser.print_help()
         sys.exit(1)

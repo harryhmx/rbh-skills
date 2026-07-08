@@ -9,8 +9,8 @@ Backend skills for the RBH Agent learning platform. Each skill is an independent
 | **sms-auth** | API | SMS verification for authentication (send + verify) |
 | **story-generation** | API | AI-powered story generation with branching support based on Critical Thinking answers |
 | **project-creation** | Internal | Generate Project model data and sync to Supabase (Claude Code only) |
-| **content-production** | Agent Skill | **A1** — Generate images/video via Agnes AI, speech via Fish Speech, caption images. Local Agent creates or edits TXT/MD/JSON/... files from user prompts directly, then content-production generates assets. |
-| **media-composer** | Agent Skill | **A2** — Media editing toolkit. v0.1: STT transcription via MLX Whisper (local Apple Silicon). v0.2+: ffmpeg editing toolbox (trim, extract-audio, subtitle-burn, stitch, concat, etc.). |
+| **content-production** | Agent Skill | Generate images/video via Agnes AI, speech via Fish Speech; extract plain text from DOCX/PDF; convert DOCX to Markdown. Local Agent creates or edits TXT/MD/JSON/... files from user prompts directly, then content-production generates assets. |
+| **media-composer** | Agent Skill | Media editing toolkit. v0.1: STT transcription via MLX Whisper (local Apple Silicon); caption (overlay text on images). v0.2+: ffmpeg editing toolbox (trim, extract-audio, subtitle-burn, stitch, concat, etc.). |
 | **video-converter** | Agent Skill | Composite images + audio into MP4 video segments, then concatenate into a final video. Last step of the pipeline, receives assets from content-production. |
 
 ## Tech Stack

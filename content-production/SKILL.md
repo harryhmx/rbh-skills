@@ -1,7 +1,7 @@
 ---
 name: content-production
-description: "Generate images, video, and speech audio from structured segment JSON files. The Local Agent (Claude Code, Codex, etc.) creates the JSON from user prompts directly. Reads image_prompt/video_prompt fields for images/videos and text field for speech. Produces PNG images via Agnes AI, MP4 videos via Agnes AI, or MP3 audio via Fish Speech. Use when asked to 'generate images from prompts', 'create videos from descriptions', 'generate speech audio', 'convert prompts to images/videos', or 'produce content from segments'."
-version: "0.5.0"
+description: "Generate images, video, and speech audio from structured segment JSON files. The Local Agent (Claude Code, Codex, etc.) creates the JSON from user prompts directly. Reads image_prompt/video_prompt fields for images/videos and text field for speech. Produces PNG images via Agnes AI, MP4 videos via Agnes AI, or MP3 audio via Fish Speech. Also extracts plain text from DOCX/PDF documents and converts DOCX to structured Markdown. Use when asked to 'generate images from prompts', 'create videos from descriptions', 'generate speech audio', 'convert prompts to images/videos', 'produce content from segments', 'extract text from a document', or 'convert a document to markdown'."
+version: "0.6.0"
 allowed-tools: ["Bash", "Read", "Write"]
 ---
 
@@ -24,18 +24,22 @@ All generation is **batch-mode from segments JSON files** created by the Local A
 2. **Extracts** the `image_prompt`, `video_prompt`, or `text` fields from each segment
 3. **Generates** images via Agnes AI, videos via Agnes AI, or audio via Fish Speech
 4. **Saves** files in index order as `000.png`, `000.mp4`, or `000.mp3`, ...
-5. **Captions** images by overlaying segment titles centered on each image
+5. **Extracts** plain text from DOCX/PDF documents → `.txt` (no formatting; supports partial ranges)
+6. **Converts** DOCX to structured Markdown (`.md`), preserving headings/lists/tables
 
 ## When to use it
 
-**Direct usage (default):** Trigger this skill when the user wants to generate content from prompts they already have. The Local Agent creates the JSON, then invokes the CLI:
+**Direct usage (default):** Trigger this skill when the user wants to generate content from prompts they already have, or extract/convert binary documents. The Local Agent creates the JSON, then invokes the CLI:
 
 - "Generate images from these prompts / descriptions"
 - "Create a video based on this prompt"
 - "Turn these image descriptions into PNGs"
 - "Generate speech audio for this text"
+- "Extract text from this DOCX/PDF file"
+- "Convert this DOCX to markdown"
 - "根据这些 prompt 生成图片 / 视频"
 - "帮我把这些描述转成图片 / 视频 / 音频"
+- "把这个文档提取成纯文本 / 转成 markdown"
 
 ## When NOT to use it
 
@@ -43,6 +47,7 @@ All generation is **batch-mode from segments JSON files** created by the Local A
 - **Text optimization or prompt generation from raw text** — Local Agent handles this natively
 - **Story generation** — use the `story-generation` FastAPI service
 - **Compositing images + audio into video** — use `video-converter` instead
+- **Captioning images (overlay text on images)** — use `media-composer`'s `caption` subcommand instead
 - **Writing MD articles** — Local Agent writes articles directly (see `references/article-guide.md`); content-production only handles media generation
 
 ## Creating segments JSON directly (Local Agent)
@@ -110,9 +115,6 @@ python scripts/cli.py video -i ucla-segments.json -o videos/ --size 1152x768 --n
 
 # Generate speech from segments (uses text field)
 python scripts/cli.py speech -i ucla-segments.json -o audio/
-
-# Overlay titles onto generated images
-python scripts/cli.py caption -i ucla-segments.json -d images/ -o captioned/
 ```
 
 **CLI arguments (image subcommand):**
@@ -144,15 +146,43 @@ python scripts/cli.py caption -i ucla-segments.json -d images/ -o captioned/
 
 Speech generation uses the segment's `text` field as the speech content.
 
-**CLI arguments (caption subcommand):**
+**CLI arguments (extract subcommand):**
+
+```bash
+# Extract DOCX/PDF to plain text (full document)
+python scripts/cli.py extract -i report.docx -o report.txt
+python scripts/cli.py extract -i paper.pdf -o paper.txt
+
+# Extract a partial range (1-indexed, inclusive): paragraphs for DOCX, pages for PDF
+python scripts/cli.py extract -i paper.pdf --range 2-5 -o excerpt.txt
+
+# Print to stdout instead of writing a file
+python scripts/cli.py extract -i report.docx
+```
+
+Extract dumps raw text — no formatting is preserved. Use it when you just need the words fast. (PPTX/XLSX support is planned.)
 
 | Argument | Short | Description | Default |
 |----------|-------|-------------|---------|
-| `--input` | `-i` | Path to segments JSON file | (required) |
-| `--dir` | `-d` | Directory containing `{index:03d}.png` images | (required) |
-| `--output` | `-o` | Output directory for captioned images | (overwrites originals) |
-| `--font` | | Path to .ttf/.ttc font file | (auto-detect CJK) |
-| `--font-size` | | Font size in points | `36` |
+| `--input` | `-i` | Path to source document (docx, pdf) | (required) |
+| `--output` | `-o` | Output `.txt` file | (stdout) |
+| `--range` | | 1-indexed inclusive range: `N`, `N-M`, `N-`, `-M` | (whole doc) |
+| `--format` | | Force input format | (from extension) |
+
+**CLI arguments (convert subcommand):**
+
+```bash
+# Convert DOCX to structured Markdown
+python scripts/cli.py convert -i report.docx -o report.md
+```
+
+Convert preserves document structure: headings, lists, bold/italic, and tables are mapped to Markdown. DOCX uses python-docx (precise style mapping) with a mammoth fallback for corrupted/non-compliant XML. (PPTX support is planned.)
+
+| Argument | Short | Description | Default |
+|----------|-------|-------------|---------|
+| `--input` | `-i` | Path to source document (docx) | (required) |
+| `--output` | `-o` | Output `.md` file | (stdout) |
+| `--format` | | Force input format | (from extension) |
 
 ## Examples
 
@@ -275,43 +305,60 @@ Uses the `skills/.env` configuration:
 ## Architecture
 
 ```
-User Prompts
+User Prompts / Documents
         │
         └── Local Agent
                 │
-                └── creates segments.json directly from user prompts
+                ├── creates segments.json directly from user prompts
+                │       │
+                │       ▼
+                │   content-production (CLI)
+                │       │
+                │       ├── image ──> generate_images()
+                │       │               │
+                │       │               └── POST /v1/images/generations
+                │       │                       → Agnes AI → 000.png, 001.png, ...
+                │       │
+                │       ├── video ──> generate_videos()
+                │       │               │
+                │       │               ├── POST /v1/videos (create video)
+                │       │               ├── GET /v1/videos/{video_id} (parallel poll)
+                │       │               └── Download MP4 → 000.mp4, 001.mp4, ...
+                │       │
+                │       └── speech ─> generate_speech()
+                │                       │
+                │                       └── SiliconFlow Fish Speech → 000.mp3, ...
+                │                           (uses text field)
+                │
+                └── Binary documents (docx/pdf)
                         │
                         ▼
                 content-production (CLI)
                         │
-                        ├── image ──> generate_images()
+                        ├── extract ─> extract_text()
                         │               │
-                        │               └── POST /v1/images/generations
-                        │                       → Agnes AI → 000.png, 001.png, ...
+                        │               ├── DOCX: python-docx → .txt (per paragraph)
+                        │               └── PDF:  pypdf → .txt (per page)
+                        │               (--range selects a 1-indexed paragraph/page subset)
                         │
-                        ├── video ──> generate_videos()
-                        │               │
-                        │               ├── POST /v1/videos (create video)
-                        │               ├── GET /v1/videos/{video_id} (parallel poll)
-                        │               └── Download MP4 → 000.mp4, 001.mp4, ...
-                        │
-                        ├── speech ─> generate_speech()
-                        │               │
-                        │               └── SiliconFlow Fish Speech → 000.mp3, ...
-                        │                   (uses text field)
-                        │
-                        └── caption ─> caption_images()
+                        └── convert ─> convert_to_md()
                                         │
-                                        └── PIL (Pillow) — Overlay title text centered
+                                        └── DOCX: python-docx (+ mammoth fallback) → .md
+                                            (headings / lists / bold-italic / tables)
 ```
+
+> Image captioning (overlay text on images) has moved to **media-composer**'s `caption` subcommand.
 
 ## Output consumed by
 
 - **video-converter**: receives images + audio for video synthesis
 - **Direct publishing**: images published as article illustrations
 - **Manual editing**: images and audio files for further processing
+- **extract**: Agent reads the resulting `.txt` / `.csv` files
+- **convert**: Agent reads the resulting `.md` files (can be published directly or further edited)
 
 ## Dependencies
 
 - Native mode: none (Claude Code handles everything)
 - CLI mode: Python 3.10+, `openai`, `requests`, `python-dotenv` (in skills root `requirements.txt`)
+- extract/convert: `python-docx`, `pypdf`, `mammoth` (in `requirements-local.txt`; CLI-only, not in the Railway image). PPTX/XLSX will add `python-pptx` / `openpyxl` when implemented.

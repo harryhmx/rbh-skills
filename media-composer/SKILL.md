@@ -1,7 +1,7 @@
 ---
 name: media-composer
-description: "Media editing toolkit — transcribe audio/video to text (STT via MLX Whisper), trim/crop videos, extract audio tracks, replace segments, enhance video quality, burn subtitles, stitch images, and concatenate videos. Deterministic ffmpeg + Pillow operations. Use when asked to 'transcribe audio', 'convert speech to text', 'trim video', 'extract audio from video', 'enhance video', 'burn subtitles', 'stitch images', or 'concatenate videos'."
-version: "0.1.0"
+description: "Media editing toolkit — transcribe audio/video to text (STT via MLX Whisper), overlay captions onto images, trim/crop videos, extract audio tracks, replace segments, enhance video quality, burn subtitles, stitch images, and concatenate videos. Deterministic ffmpeg + Pillow operations. Use when asked to 'transcribe audio', 'convert speech to text', 'caption an image', 'overlay text on an image', 'trim video', 'extract audio from video', 'enhance video', 'burn subtitles', 'stitch images', or 'concatenate videos'."
+version: "0.2.0"
 allowed-tools: ["Bash", "Read", "Write"]
 ---
 
@@ -54,12 +54,36 @@ python scripts/cli.py transcribe -i recording.m4a --backend whisper-cpp --model 
 | `whisper-cpp` | Build from source + CoreML | High-throughput, Metal + ANE dual acceleration |
 | Cloud API (future) | HTTP call | When local models aren't wanted |
 
+### caption — overlay text on images
+
+Draw a semi-transparent banner with centered text across each PNG. Deterministic Pillow operation (migrated here from content-production).
+
+```bash
+# Caption images named 000.png, 001.png, ... using a JSON index→title mapping
+python scripts/cli.py caption -i titles.json -d images/ -o captioned/
+
+# Force a specific font and size
+python scripts/cli.py caption -i titles.json -d images/ --font /path/font.ttc --font-size 48
+```
+
+The `-i` JSON may be a segments wrapper (`{"segments": [{index, title, ...}]}`) or a bare list of `{index, title}` objects. Images are matched by `{index:03d}.png`. CJK fonts are auto-detected on macOS/Linux; pass `--font` to override.
+
+**CLI arguments (caption subcommand):**
+
+| Argument | Short | Description | Default |
+|----------|-------|-------------|---------|
+| `--input` | `-i` | JSON with index→title mapping | (required) |
+| `--dir` | `-d` | Directory of `{index:03d}.png` images | (required) |
+| `--output` | `-o` | Output directory for captioned images | (overwrites originals) |
+| `--font` | | Path to .ttf/.ttc font | (auto-detect CJK) |
+| `--font-size` | | Font size in points | `36` |
+
 ### v0.2 — ffmpeg editing toolbox (coming soon)
 
-`trim` / `extract-audio` / `replace-segment` / `enhance` / `subtitle-burn` / `stitch` / `concat`
+`trim` / `extract-audio` / `replace-segment` / `replace-bg` / `enhance` / `subtitle-burn`
 
 ## Dependencies
 
-- `mlx-whisper` (v0.1) — `pip install mlx-whisper`
+- `mlx-whisper` (transcribe) — `pip install mlx-whisper`
 - `ffmpeg` ≥ 5.0 (system) — audio preprocessing
-- `Pillow` (v0.2 stitch) — already in skills requirements.txt
+- `Pillow` (caption; future stitch) — already in skills requirements.txt

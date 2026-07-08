@@ -1,26 +1,27 @@
 """
-Image captioning — overlay segment titles onto generated PNG images.
+Image captioning — overlay text onto PNG images.
 
-Uses Pillow to draw semi-transparent banner overlays with centered text.
-Supports CJK fonts via auto-detection on Linux and macOS.
+Deterministic Pillow operation: draws a semi-transparent banner with centered
+text across each image.  Migrated here from content-production so it sits
+alongside the other deterministic media operations (stitch, trim, …).
+
+CJK-capable fonts are auto-detected on Linux and macOS; pass ``--font`` to
+force a specific .ttf/.ttc file.
 """
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
 from scripts.common import logger
 
-# ---------------------------------------------------------------------------
-# Font configuration
-# ---------------------------------------------------------------------------
-
-# CJK-capable font paths to try (order: preference)
+# CJK-capable font paths to try, in order of preference.
 _CJK_FONT_CANDIDATES = [
-    "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/System/Library/Fonts/PingFang.ttc",                       # macOS (CJK)
+    "/System/Library/Fonts/STHeiti Medium.ttc",                 # macOS (CJK, legacy)
+    "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",           # Linux (WenQuanYi)
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",             # Linux (WenQuanYi)
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",          # Linux (Latin)
 ]
 
 _DEFAULT_FONT_SIZE = 36
@@ -34,11 +35,6 @@ def _find_cjk_font() -> str | None:
     return None
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def caption_images(
     segments: list[dict],
     image_dir: str | Path,
@@ -46,10 +42,10 @@ def caption_images(
     font_path: str | None = None,
     font_size: int = _DEFAULT_FONT_SIZE,
 ) -> list[dict]:
-    """Overlay the ``title`` from each segment onto the corresponding image.
+    """Overlay each segment's ``title`` onto its matching image.
 
-    Images are matched by ``{index:03d}.png`` filename.  Text is placed
-    centered on a semi-transparent dark banner spanning the image width.
+    Images are matched by ``{index:03d}.png`` filename.  Text is centered on a
+    semi-transparent dark banner spanning the image width.
 
     Parameters
     ----------
@@ -60,8 +56,8 @@ def caption_images(
     output_dir : str or Path or None
         Where to write captioned images.  If ``None``, overwrites originals.
     font_path : str or None
-        Path to a .ttf/.ttc font (CJK-capable for Chinese text).  Auto-detected
-        from common system paths when ``None``.
+        Path to a .ttf/.ttc font (CJK-capable for Chinese).  Auto-detected from
+        common system paths when ``None``.
     font_size : int
         Font size in points.  Default: 36.
 

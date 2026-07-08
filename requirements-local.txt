@@ -9,9 +9,21 @@
 -r requirements.txt
 
 # ---------------------------------------------------------------------------
-# STT — local Whisper (Phase 3.2 v0.1)
+# STT — local Whisper
 # ---------------------------------------------------------------------------
 mlx-whisper>=0.4.0          # → torch, mlx, mlx-metal, numba, scipy, numpy
+
+# ---------------------------------------------------------------------------
+# content-production — document extract/convert
+# CLI-only deps; NOT in the Railway image (content-production is excluded from
+# the deploy via .dockerignore). extract = plain text dump; convert = MD.
+# ---------------------------------------------------------------------------
+python-docx>=1.1.0           # DOCX extract (plain text) + convert (→ Markdown)
+pypdf>=4.0.0                 # PDF extract (plain text)
+mammoth>=1.6.0              # DOCX convert fallback (corrupted / non-compliant XML)
+# python-pptx>=0.6.23        # (planned) PPTX extract + convert
+# openpyxl>=3.1.0            # (planned) XLSX extract → CSV
+# markdown>=3.5              # (deferred) MD→HTML (md_html, independent track)
 
 # ---------------------------------------------------------------------------
 # v0.2+ (future — uncomment when needed)
