@@ -7,50 +7,59 @@ allowed-tools: ["Bash", "Read", "Write"]
 
 # Content Production
 
-Generates images, videos, and speech audio from structured segment JSON — the **primary content generation step** of the RBH pipeline, producing assets for `video-converter`.
+A **media-generation + document-conversion** toolbox. It reads a segments JSON (created by the Local Agent) and generates images / videos / speech, or it converts DOCX/PDF documents. All generation is **batch-mode from segments JSON**. This is the primary content-generation step of the RBH pipeline, feeding assets to `video-converter`.
 
-## Default path: Local Agent creates JSON directly
+## When to invoke — decision tree
 
-When a user wants to generate images, videos, or speech from prompts, the **only path** is:
+**This skill is a media-generation + document-conversion toolbox, NOT a content-authoring orchestrator.** Only run its CLI when a sub-task requires something the Agent and environment-native tools cannot do. Authoring text (`.md` / `.json` / `.txt`) is always Agent-native.
 
-1. **Local Agent (Claude Code / Codex / etc.) creates** a segments JSON file directly from user prompts
-2. **content-production reads** that JSON and generates the assets
+> **Invoking the skill ≠ reading its references.** Running `cli.py` is what "triggers" the skill. Reading `references/*.md` for quality guidance is just consulting a file — optional, and not a trigger.
 
-All generation is **batch-mode from segments JSON files** created by the Local Agent.
+```
+incoming task
+  │
+  ├─ write / edit TEXT content (article, summary, segmentation, prompts)?
+  │     → Agent writes it directly (Write / Edit). DO NOT run the CLI.
+  │        · vague / too-short prompt → ask clarifying questions first
+  │          (audience / length / key points), guided by references/article-guide.md —
+  │          this is dialogue, not a skill run.
+  │        · want consistent quality → optionally read references/*.md (reading ≠ invoking).
+  │
+  ├─ generate MEDIA (image / video / speech)?
+  │     → run the CLI (image / video / speech).
+  │        Create segments.json ONLY here, as scaffolding for generation — never as a standalone deliverable.
+  │
+  ├─ read / convert a DOCUMENT (docx / pdf / pptx / xlsx)?
+  │     ├─ plain-text dump only → try environment tools first
+  │     │     (textutil for docx on macOS; pdftotext for pdf if poppler is installed).
+  │     │     · unavailable → run `extract` (NEVER `pip install` outside the venv).
+  │     ├─ structured (docx/pptx → markdown) → run `convert` (environment tools can't do this).
+  │     └─ partial range (`--range`) → run `extract`.
+  │
+  └─ none of the above → not this skill (story-generation / video-converter / media-composer …).
+```
+
+**One-liner:** if you can write it (Agent) or shell-command it (`textutil` / `pdftotext`), do that; only run this skill's CLI for generation APIs or deterministic document conversion.
+
+## Not this skill
+
+- **Story generation** → `story-generation` (FastAPI service)
+- **Compositing images + audio into video** → `video-converter`
+- **Captioning images (overlay text)** → `media-composer` `caption` subcommand
+- **Writing / editing MD articles** → Agent-native; see `references/article-guide.md` for guidance
 
 ## What this skill does
 
 1. **Reads** a segments JSON file (created by Local Agent)
-2. **Extracts** the `image_prompt`, `video_prompt`, or `text` fields from each segment
-3. **Generates** images via Agnes AI, videos via Agnes AI, or audio via Fish Speech
-4. **Saves** files in index order as `000.png`, `000.mp4`, or `000.mp3`, ...
-5. **Extracts** plain text from DOCX/PDF documents → `.txt` (no formatting; supports partial ranges)
+2. **Extracts** `image_prompt`, `video_prompt`, or `text` from each segment
+3. **Generates** images (Agnes AI), videos (Agnes AI), or audio (Fish Speech)
+4. **Saves** files in index order as `000.png`, `000.mp4`, or `000.mp3`, …
+5. **Extracts** plain text from DOCX/PDF → `.txt` (no formatting; supports partial ranges)
 6. **Converts** DOCX to structured Markdown (`.md`), preserving headings/lists/tables
 
-## When to use it
+## Creating segments JSON
 
-**Direct usage (default):** Trigger this skill when the user wants to generate content from prompts they already have, or extract/convert binary documents. The Local Agent creates the JSON, then invokes the CLI:
-
-- "Generate images from these prompts / descriptions"
-- "Create a video based on this prompt"
-- "Turn these image descriptions into PNGs"
-- "Generate speech audio for this text"
-- "Extract text from this DOCX/PDF file"
-- "Convert this DOCX to markdown"
-- "根据这些 prompt 生成图片 / 视频"
-- "帮我把这些描述转成图片 / 视频 / 音频"
-- "把这个文档提取成纯文本 / 转成 markdown"
-
-## When NOT to use it
-
-- **Text splitting / segmentation** — Local Agent handles this natively
-- **Text optimization or prompt generation from raw text** — Local Agent handles this natively
-- **Story generation** — use the `story-generation` FastAPI service
-- **Compositing images + audio into video** — use `video-converter` instead
-- **Captioning images (overlay text on images)** — use `media-composer`'s `caption` subcommand instead
-- **Writing MD articles** — Local Agent writes articles directly (see `references/article-guide.md`); content-production only handles media generation
-
-## Creating segments JSON directly (Local Agent)
+> **Only create a segments.json when you are about to generate images / videos / speech.** It is scaffolding for media generation, not a standalone deliverable. For plain-text output, write `.md` / `.txt` directly — do not produce a segments.json.
 
 The Local Agent creates a segments JSON file directly from user prompts:
 
@@ -72,293 +81,51 @@ The Local Agent creates a segments JSON file directly from user prompts:
 }
 ```
 
-Then pass this JSON to the CLI:
-
-```bash
-python scripts/cli.py image -i prompts.json -o images/
-```
-
-Each segment must have `index`, `title`. Include `image_prompt` for images, `video_prompt` for videos, or `text` for speech — whichever the user needs. The Local Agent fills these fields from the user's own prompts.
+Each segment must have `index`, `title`. Include `image_prompt` (images), `video_prompt` (videos), or `text` (speech) — whichever the user needs. For end-to-end flows, see `references/examples.md`.
 
 ## How to invoke
 
-### Native Claude Code
+The CLI needs the shared skills virtualenv and `skills/.env` (API keys), both **one level above this skill** (`../.venv` and `../.env`). `cli.py` locates `.env` automatically relative to its own location (following symlinks), so no manual env setup is needed.
 
-When invoked from Claude Code, Claude reads the segments JSON and runs the CLI:
-
-```
-Generate images from ucla-segments.json, size 512x512, save to images/
-```
-
-### Python Environment
-
-Activate the shared virtual environment before running any Python CLI commands:
+Run from this skill's directory, calling the venv python directly (no `cd` / `activate`):
 
 ```bash
-source ../.venv/bin/activate
+# Image (default 1024x768; --size 512x512 to customize)
+../.venv/bin/python scripts/cli.py image  -i segments.json -o images/
+
+# Video (--size / --num-frames / --frame-rate to customize)
+../.venv/bin/python scripts/cli.py video  -i segments.json -o videos/
+
+# Speech (uses the text field)
+../.venv/bin/python scripts/cli.py speech -i segments.json -o audio/
+
+# Extract DOCX/PDF → plain text   (--range 2-5 for a partial range)
+../.venv/bin/python scripts/cli.py extract -i report.docx -o report.txt
+
+# Convert DOCX → structured Markdown
+../.venv/bin/python scripts/cli.py convert -i report.docx -o report.md
 ```
 
-### Python CLI
+…or `source ../.venv/bin/activate` first, after which the bare `python scripts/cli.py …` form works as-is.
 
-```bash
-# Generate images from segments (default 1024x768)
-python scripts/cli.py image -i ucla-segments.json -o images/
-
-# Custom image size
-python scripts/cli.py image -i ucla-segments.json -o images/ --size 512x512
-
-# Generate videos from segments
-python scripts/cli.py video -i ucla-segments.json -o videos/
-
-# Custom video settings
-python scripts/cli.py video -i ucla-segments.json -o videos/ --size 1152x768 --num-frames 121 --frame-rate 24
-
-# Generate speech from segments (uses text field)
-python scripts/cli.py speech -i ucla-segments.json -o audio/
-```
-
-**CLI arguments (image subcommand):**
-
-| Argument | Short | Description | Default |
-|----------|-------|-------------|---------|
-| `--input` | `-i` | Path to segments JSON file | (required) |
-| `--output` | `-o` | Output directory | `output/` |
-| `--size` | | Image size `WxH` (e.g. `512x512`) | `1024x768` |
-| `--prompt-key` | | Segment key for the image prompt | `image_prompt` |
-
-**CLI arguments (video subcommand):**
-
-| Argument | Short | Description | Default |
-|----------|-------|-------------|---------|
-| `--input` | `-i` | Path to segments JSON file | (required) |
-| `--output` | `-o` | Output directory | `output/` |
-| `--size` | | Video size `WxH` (e.g. `1152x768`) | `1152x768` |
-| `--num-frames` | | Number of frames (≤ 441, 8n+1) | `121` |
-| `--frame-rate` | | Frame rate in FPS (1–60) | `24` |
-| `--prompt-key` | | Segment key for the video prompt | `video_prompt` |
-
-**CLI arguments (speech subcommand):**
-
-| Argument | Short | Description | Default |
-|----------|-------|-------------|---------|
-| `--input` | `-i` | Path to segments JSON file | (required) |
-| `--output` | `-o` | Output directory | `output/` |
-
-Speech generation uses the segment's `text` field as the speech content.
-
-**CLI arguments (extract subcommand):**
-
-```bash
-# Extract DOCX/PDF to plain text (full document)
-python scripts/cli.py extract -i report.docx -o report.txt
-python scripts/cli.py extract -i paper.pdf -o paper.txt
-
-# Extract a partial range (1-indexed, inclusive): paragraphs for DOCX, pages for PDF
-python scripts/cli.py extract -i paper.pdf --range 2-5 -o excerpt.txt
-
-# Print to stdout instead of writing a file
-python scripts/cli.py extract -i report.docx
-```
-
-Extract dumps raw text — no formatting is preserved. Use it when you just need the words fast. (PPTX/XLSX support is planned.)
-
-| Argument | Short | Description | Default |
-|----------|-------|-------------|---------|
-| `--input` | `-i` | Path to source document (docx, pdf) | (required) |
-| `--output` | `-o` | Output `.txt` file | (stdout) |
-| `--range` | | 1-indexed inclusive range: `N`, `N-M`, `N-`, `-M` | (whole doc) |
-| `--format` | | Force input format | (from extension) |
-
-**CLI arguments (convert subcommand):**
-
-```bash
-# Convert DOCX to structured Markdown
-python scripts/cli.py convert -i report.docx -o report.md
-```
-
-Convert preserves document structure: headings, lists, bold/italic, and tables are mapped to Markdown. DOCX uses python-docx (precise style mapping) with a mammoth fallback for corrupted/non-compliant XML. (PPTX support is planned.)
-
-| Argument | Short | Description | Default |
-|----------|-------|-------------|---------|
-| `--input` | `-i` | Path to source document (docx) | (required) |
-| `--output` | `-o` | Output `.md` file | (stdout) |
-| `--format` | | Force input format | (from extension) |
-
-## Examples
-
-### Example 1: Direct from prompts (default path)
-
-Local Agent creates a segments JSON directly from user prompts:
-
-```json
-// prompts.json — created by Local Agent
-{
-  "total_segments": 2,
-  "segments": [
-    {
-      "index": 0,
-      "title": "Sunset mountains",
-      "image_prompt": "A breathtaking sunset over snow-capped mountains, warm orange and pink sky, photorealistic, 4K"
-    },
-    {
-      "index": 1,
-      "title": "Forest stream",
-      "image_prompt": "A crystal-clear stream winding through a dense green forest, dappled sunlight, cinematic lighting"
-    }
-  ]
-}
-```
-
-```bash
-# Generate images directly
-python scripts/cli.py image -i prompts.json -o images/
-```
-
-Output:
-```
-images/
-├── 000.png   # Segment 0 image
-├── 001.png   # Segment 1 image
-├── 002.png   # Segment 2 image
-├── 003.png   # Segment 3 image
-```
-
-### Example 2: JSON output structure (image generation)
-
-```json
-{
-  "total": 4,
-  "succeeded": 4,
-  "failed": 0,
-  "results": [
-    {
-      "index": 0,
-      "title": "Opening Scene",
-      "file_path": "/abs/path/to/images/000.png",
-      "url": "https://...",
-      "prompt": "A wide shot of a sunlit classroom..."
-    }
-  ]
-}
-```
-
-### Example 3: Generate videos from segments
-
-Local Agent creates segments JSON with `video_prompt` fields, then:
-
-```bash
-python scripts/cli.py video -i segments.json -o videos/ --size 1152x768 --num-frames 121 --frame-rate 24
-```
-
-Output:
-```
-videos/
-├── 000.mp4   # Segment 0 video
-├── 001.mp4   # Segment 1 video
-├── 002.mp4   # Segment 2 video
-├── 003.mp4   # Segment 3 video
-```
-
-Video generation is asynchronous — each video is submitted to Agnes AI, polled until complete (up to 15 min timeout), then downloaded. The JSON output includes `video_id` for each video result.
-
-### Example 4: Speech generation
-
-Local Agent creates segments JSON with `text` fields directly from user input.
-
-```bash
-# Generate speech audio
-python scripts/cli.py speech -i segments.json -o audio/
-```
-
-Output:
-```
-audio/
-├── 000.mp3   # Segment 0 audio
-├── 001.mp3   # Segment 1 audio
-├── 002.mp3   # Segment 2 audio
-├── 003.mp3   # Segment 3 audio
-```
-
-The speech content comes from the `text` field.
+→ **Full argument tables & configuration:** see [references/cli-reference.md](references/cli-reference.md).
 
 ## Configuration
 
-Uses the `skills/.env` configuration:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `IMAGE_API_KEY` | Agnes AI API key | (from .env) |
-| `IMAGE_BASE_URL` | Agnes AI API base URL | `https://apihub.agnes-ai.com` |
-| `IMAGE_MODEL` | Image generation model | `agnes-image-2.1-flash` |
-| `IMAGE_SIZE` | Default image size (WxH) | `1024x768` |
-| `VIDEO_API_KEY` | Agnes AI API key | (from .env) |
-| `VIDEO_BASE_URL` | Agnes AI API base URL | `https://apihub.agnes-ai.com` |
-| `VIDEO_MODEL` | Video generation model | `agnes-video-v2.0` |
-| `VIDEO_SIZE` | Default video size (WxH) | `1152x768` |
-| `VIDEO_NUM_FRAMES` | Default number of frames (≤ 441, 8n+1) | `121` |
-| `VIDEO_FRAME_RATE` | Default frame rate in FPS (1–60) | `24` |
-| `SPEECH_API_KEY` | SiliconFlow API key | (from .env) |
-| `SPEECH_BASE_URL` | SiliconFlow API base URL | `https://api.siliconflow.com/v1` |
-| `SPEECH_MODEL` | Speech generation model | `fishaudio/fish-speech-1.5` |
-| `SPEECH_VOICE` | Speech voice preset | `fishaudio/fish-speech-1.5:anna` |
-
-## Architecture
-
-```
-User Prompts / Documents
-        │
-        └── Local Agent
-                │
-                ├── creates segments.json directly from user prompts
-                │       │
-                │       ▼
-                │   content-production (CLI)
-                │       │
-                │       ├── image ──> generate_images()
-                │       │               │
-                │       │               └── POST /v1/images/generations
-                │       │                       → Agnes AI → 000.png, 001.png, ...
-                │       │
-                │       ├── video ──> generate_videos()
-                │       │               │
-                │       │               ├── POST /v1/videos (create video)
-                │       │               ├── GET /v1/videos/{video_id} (parallel poll)
-                │       │               └── Download MP4 → 000.mp4, 001.mp4, ...
-                │       │
-                │       └── speech ─> generate_speech()
-                │                       │
-                │                       └── SiliconFlow Fish Speech → 000.mp3, ...
-                │                           (uses text field)
-                │
-                └── Binary documents (docx/pdf)
-                        │
-                        ▼
-                content-production (CLI)
-                        │
-                        ├── extract ─> extract_text()
-                        │               │
-                        │               ├── DOCX: python-docx → .txt (per paragraph)
-                        │               └── PDF:  pypdf → .txt (per page)
-                        │               (--range selects a 1-indexed paragraph/page subset)
-                        │
-                        └── convert ─> convert_to_md()
-                                        │
-                                        └── DOCX: python-docx (+ mammoth fallback) → .md
-                                            (headings / lists / bold-italic / tables)
-```
-
-> Image captioning (overlay text on images) has moved to **media-composer**'s `caption` subcommand.
-
-## Output consumed by
-
-- **video-converter**: receives images + audio for video synthesis
-- **Direct publishing**: images published as article illustrations
-- **Manual editing**: images and audio files for further processing
-- **extract**: Agent reads the resulting `.txt` / `.csv` files
-- **convert**: Agent reads the resulting `.md` files (can be published directly or further edited)
+Configured via the shared `skills/.env` (API keys, model/size/frame defaults). The CLI reads it
+automatically — see [references/cli-reference.md](references/cli-reference.md#configuration) for the
+full variable list.
 
 ## Dependencies
 
 - Native mode: none (Claude Code handles everything)
-- CLI mode: Python 3.10+, `openai`, `requests`, `python-dotenv` (in skills root `requirements.txt`)
+- CLI mode: Python 3.10+, `openai`, `requests`, `python-dotenv` (in skills-root `requirements.txt`)
 - extract/convert: `python-docx`, `pypdf`, `mammoth` (in `requirements-local.txt`; CLI-only, not in the Railway image). PPTX/XLSX will add `python-pptx` / `openpyxl` when implemented.
+
+## References
+
+- [cli-reference.md](references/cli-reference.md) — full argument tables + configuration variables for every subcommand
+- [examples.md](references/examples.md) — end-to-end examples (image / video / speech)
+- [architecture.md](references/architecture.md) — pipeline diagram + downstream consumers
+- [article-guide.md](references/article-guide.md) — MD article structure, style, input-validation guardrails
+- [prompt-guide.md](references/prompt-guide.md) — how to write effective `image_prompt` / `video_prompt`
