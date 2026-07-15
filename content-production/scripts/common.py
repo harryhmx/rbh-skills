@@ -26,6 +26,14 @@ logger = logging.getLogger(__name__)
 # Configuration (from skills/.env)
 # ---------------------------------------------------------------------------
 
+# Provider selection — which backend serves each capability.
+#   image:  "agnes" (default) | "gemini"
+#   video:  "agnes" (default) | "gemini"
+#   speech: "siliconflow" (default) | "gemini"
+IMAGE_PROVIDER = os.environ.get("IMAGE_PROVIDER", "agnes").strip().lower()
+VIDEO_PROVIDER = os.environ.get("VIDEO_PROVIDER", "agnes").strip().lower()
+SPEECH_PROVIDER = os.environ.get("SPEECH_PROVIDER", "siliconflow").strip().lower()
+
 # Agnes AI image generation
 IMAGE_API_KEY = os.environ.get("IMAGE_API_KEY", "")
 IMAGE_BASE_URL = os.environ.get("IMAGE_BASE_URL", "https://apihub.agnes-ai.com")
@@ -47,6 +55,23 @@ SPEECH_API_KEY = os.environ.get("SPEECH_API_KEY", "")
 SPEECH_BASE_URL = os.environ.get("SPEECH_BASE_URL", "https://api.siliconflow.com/v1")
 SPEECH_MODEL = os.environ.get("SPEECH_MODEL", "fishaudio/fish-speech-1.5")
 SPEECH_VOICE = os.environ.get("SPEECH_VOICE", "fishaudio/fish-speech-1.5:anna")
+
+# Gemini (Google AI) — one API key shared by image / video / speech
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_BASE_URL = os.environ.get(
+    "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"
+)
+# Image: Nano Banana 2 (native Gemini image model; Imagen is deprecated)
+GEMINI_IMAGE_MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-3.1-flash-image")
+GEMINI_IMAGE_SIZE = os.environ.get("GEMINI_IMAGE_SIZE", "1K")  # 1K / 2K / 4K
+# Video: Veo 3.1 (long-running operations flow)
+GEMINI_VIDEO_MODEL = os.environ.get("GEMINI_VIDEO_MODEL", "veo-3.1-generate-preview")
+GEMINI_VIDEO_DURATION = int(os.environ.get("GEMINI_VIDEO_DURATION", "8"))  # 4 / 6 / 8 seconds
+GEMINI_VIDEO_RESOLUTION = os.environ.get("GEMINI_VIDEO_RESOLUTION", "720p")  # 720p / 1080p / 4k
+GEMINI_VIDEO_CONCURRENCY = int(os.environ.get("GEMINI_VIDEO_CONCURRENCY", "4"))  # max in-flight Veo operations
+# Speech: Gemini TTS (PCM 24 kHz output, wrapped as WAV)
+GEMINI_TTS_MODEL = os.environ.get("GEMINI_TTS_MODEL", "gemini-3.1-flash-tts-preview")
+GEMINI_TTS_VOICE = os.environ.get("GEMINI_TTS_VOICE", "Kore")
 
 MAX_RETRIES = 2
 DOWNLOAD_RETRIES = 3          # retries for the download step only

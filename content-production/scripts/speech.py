@@ -1,7 +1,12 @@
 """
-Speech audio generation via SiliconFlow Fish Speech.
+Speech audio generation — multi-provider dispatch (SiliconFlow / Gemini).
 
-Uses the OpenAI-compatible audio endpoint to generate MP3 speech from text.
+The provider is selected via ``SPEECH_PROVIDER`` in skills/.env:
+
+- ``siliconflow`` (default) — Fish Speech via the OpenAI-compatible audio
+  endpoint, saved as MP3.
+- ``gemini`` — Gemini TTS via the Gemini API, PCM output wrapped as WAV.
+
 The segment's ``text`` field is used as the speech content.
 """
 
@@ -11,25 +16,88 @@ import logging
 import time
 from pathlib import Path
 
-from openai import OpenAI
-
 from scripts.common import (
+    SPEECH_PROVIDER,
     SPEECH_API_KEY,
     SPEECH_BASE_URL,
     SPEECH_MODEL,
     SPEECH_VOICE,
+    GEMINI_API_KEY,
     MAX_RETRIES,
     logger,
 )
+
+# ---------------------------------------------------------------------------
+# SiliconFlow provider
+# ---------------------------------------------------------------------------
+
+
+def _generate_one_siliconflow(text: str) -> bytes:
+    """Generate MP3 speech audio for *text* via SiliconFlow Fish Speech."""
+    from openai import OpenAI
+
+    client = OpenAI(api_key=SPEECH_API_KEY, base_url=SPEECH_BASE_URL)
+    response = client.audio.speech.create(
+        model=SPEECH_MODEL,
+        voice=SPEECH_VOICE,
+        input=text,
+    )
+    return response.content if hasattr(response, "content") else response.read()
+
+
+# ---------------------------------------------------------------------------
+# Gemini provider
+# ---------------------------------------------------------------------------
+
+
+def _generate_one_gemini(text: str) -> bytes:
+    """Generate WAV speech audio for *text* via Gemini TTS."""
+    from scripts.gemini import gemini_generate_speech
+
+    return gemini_generate_speech(text)
+
+
+# ---------------------------------------------------------------------------
+# Provider dispatch
+# ---------------------------------------------------------------------------
+
+# provider → (generate_fn, key_name, key_getter, file_extension)
+_PROVIDERS = {
+    "siliconflow": (_generate_one_siliconflow, "SPEECH_API_KEY", lambda: SPEECH_API_KEY, ".mp3"),
+    "gemini": (_generate_one_gemini, "GEMINI_API_KEY", lambda: GEMINI_API_KEY, ".wav"),
+}
+
+
+def _resolve_provider():
+    """Return ``(generate_fn, file_extension)`` for SPEECH_PROVIDER, validating its API key."""
+    if SPEECH_PROVIDER not in _PROVIDERS:
+        raise RuntimeError(
+            f"Unknown SPEECH_PROVIDER '{SPEECH_PROVIDER}'. "
+            f"Supported: {', '.join(sorted(_PROVIDERS))}."
+        )
+    generate_fn, key_name, key_getter, extension = _PROVIDERS[SPEECH_PROVIDER]
+    if not key_getter():
+        raise RuntimeError(
+            f"{key_name} is not set (required by SPEECH_PROVIDER={SPEECH_PROVIDER}). "
+            "Set it in skills/.env or as an environment variable."
+        )
+    return generate_fn, extension
+
+
+# ---------------------------------------------------------------------------
+# Batch speech generation
+# ---------------------------------------------------------------------------
 
 
 def generate_speech(
     segments: list[dict],
     output_dir: str | Path = "output",
 ) -> list[dict]:
-    """Generate speech audio for each segment using SiliconFlow Fish Speech.
+    """Generate speech audio for each segment via the configured provider.
 
-    Audio files are saved to *output_dir* as ``{index:03d}.mp3``.
+    The provider is selected by ``SPEECH_PROVIDER`` (siliconflow / gemini).
+    Audio files are saved to *output_dir* as ``{index:03d}.mp3`` (SiliconFlow)
+    or ``{index:03d}.wav`` (Gemini).
 
     Uses the segment's ``text`` field as the speech content.
 
@@ -46,19 +114,10 @@ def generate_speech(
     list[dict]
         Each dict has ``index``, ``title``, ``file_path``, ``prompt`` keys.
     """
-    if not SPEECH_API_KEY:
-        raise RuntimeError(
-            "SPEECH_API_KEY is not set. "
-            "Set it in skills/.env or as an environment variable."
-        )
+    generate_fn, extension = _resolve_provider()
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-
-    client = OpenAI(
-        api_key=SPEECH_API_KEY,
-        base_url=SPEECH_BASE_URL,
-    )
 
     results = []
     total = len(segments)
@@ -78,22 +137,16 @@ def generate_speech(
             })
             continue
 
-        file_path = out / f"{idx:03d}.mp3"
+        file_path = out / f"{idx:03d}{extension}"
 
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 logger.info(
-                    "[%d/%d] Generating speech for '%s' (attempt %d/%d)...",
-                    idx + 1, total, title, attempt, MAX_RETRIES,
+                    "[%d/%d] Generating speech for '%s' via %s (attempt %d/%d)...",
+                    idx + 1, total, title, SPEECH_PROVIDER, attempt, MAX_RETRIES,
                 )
 
-                response = client.audio.speech.create(
-                    model=SPEECH_MODEL,
-                    voice=SPEECH_VOICE,
-                    input=speech_text,
-                )
-
-                audio_bytes = response.content if hasattr(response, "content") else response.read()
+                audio_bytes = generate_fn(speech_text)
 
                 if len(audio_bytes) < 1000:
                     logger.warning("Audio too small (%d bytes), retrying", len(audio_bytes))

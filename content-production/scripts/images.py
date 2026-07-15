@@ -1,7 +1,12 @@
 """
-Image generation via Agnes AI (``agnes-image-2.1-flash``).
+Image generation — multi-provider dispatch (Agnes AI / Gemini).
 
-Uses ``POST /v1/images/generations`` to create images from text prompts.
+The provider is selected via ``IMAGE_PROVIDER`` in skills/.env:
+
+- ``agnes`` (default) — Agnes AI ``POST /v1/images/generations``, image
+  returned as a URL and downloaded.
+- ``gemini`` — Google Gemini API (Imagen or native Gemini image models),
+  image returned inline as base64 bytes.
 """
 
 from __future__ import annotations
@@ -14,17 +19,19 @@ import urllib.request
 from pathlib import Path
 
 from scripts.common import (
+    IMAGE_PROVIDER,
     IMAGE_API_KEY,
     IMAGE_BASE_URL,
     IMAGE_MODEL,
     IMAGE_SIZE_DEFAULT,
+    GEMINI_API_KEY,
     MAX_RETRIES,
     download_with_retry,
     logger,
 )
 
 # ---------------------------------------------------------------------------
-# Agnes AI image helpers
+# Agnes AI provider
 # ---------------------------------------------------------------------------
 
 
@@ -67,6 +74,64 @@ def _extract_image_urls(data: dict) -> list[str]:
     return urls
 
 
+def _generate_one_agnes(prompt: str, size: str) -> tuple[bytes, str | None]:
+    """Generate a single image via Agnes AI. Returns ``(png_bytes, source_url)``."""
+    payload: dict = {
+        "model": IMAGE_MODEL,
+        "prompt": prompt,
+        "extra_body": {"response_format": "url"},
+    }
+    if size:
+        payload["size"] = size
+
+    data = _agnes_image_request(payload)
+    urls = _extract_image_urls(data)
+    if not urls:
+        raise RuntimeError("No image URL in Agnes response")
+
+    image_url = urls[0]
+    logger.info("Downloading from %s...", image_url[:80])
+    return download_with_retry(image_url), image_url
+
+
+# ---------------------------------------------------------------------------
+# Gemini provider
+# ---------------------------------------------------------------------------
+
+
+def _generate_one_gemini(prompt: str, size: str) -> tuple[bytes, str | None]:
+    """Generate a single image via the Gemini API. Returns ``(image_bytes, None)``."""
+    from scripts.gemini import gemini_generate_image
+
+    return gemini_generate_image(prompt, size), None
+
+
+# ---------------------------------------------------------------------------
+# Provider dispatch
+# ---------------------------------------------------------------------------
+
+_PROVIDERS = {
+    "agnes": (_generate_one_agnes, "IMAGE_API_KEY", lambda: IMAGE_API_KEY),
+    "gemini": (_generate_one_gemini, "GEMINI_API_KEY", lambda: GEMINI_API_KEY),
+}
+
+
+def _resolve_provider():
+    """Return the generate function for IMAGE_PROVIDER, validating its API key."""
+    if IMAGE_PROVIDER not in _PROVIDERS:
+        raise RuntimeError(
+            f"Unknown IMAGE_PROVIDER '{IMAGE_PROVIDER}'. "
+            f"Supported: {', '.join(sorted(_PROVIDERS))}."
+        )
+    generate_fn, key_name, key_getter = _PROVIDERS[IMAGE_PROVIDER]
+    if not key_getter():
+        raise RuntimeError(
+            f"{key_name} is not set (required by IMAGE_PROVIDER={IMAGE_PROVIDER}). "
+            "Set it in skills/.env or as an environment variable."
+        )
+    return generate_fn
+
+
 # ---------------------------------------------------------------------------
 # Batch image generation
 # ---------------------------------------------------------------------------
@@ -78,8 +143,9 @@ def generate_images(
     output_dir: str | Path = "output",
     prompt_key: str = "image_prompt",
 ) -> list[dict]:
-    """Generate an image for each segment using Agnes AI (agnes-image-2.1-flash).
+    """Generate an image for each segment via the configured provider.
 
+    The provider is selected by ``IMAGE_PROVIDER`` (agnes / gemini).
     Images are saved to *output_dir* as ``{index:03d}.png`` in index order.
 
     Parameters
@@ -88,7 +154,8 @@ def generate_images(
         Segments from :func:`common.load_segments_json`.  Each must have an
         ``index`` and the *prompt_key* field.
     size : str
-        Image size in ``WxH`` format (e.g. ``"1024x768"``).
+        Image size in ``WxH`` format (e.g. ``"1024x768"``).  For Gemini the
+        size is mapped to the nearest supported aspect ratio.
     output_dir : str or Path
         Directory to save generated images.
     prompt_key : str
@@ -99,13 +166,10 @@ def generate_images(
     -------
     list[dict]
         Each dict has ``index``, ``title``, ``file_path``, ``url``, and
-        ``prompt`` keys.
+        ``prompt`` keys.  ``url`` is the source URL for URL-based providers
+        (Agnes) and ``None`` for inline-bytes providers (Gemini).
     """
-    if not IMAGE_API_KEY:
-        raise RuntimeError(
-            "IMAGE_API_KEY is not set. "
-            "Set it in skills/.env or as an environment variable."
-        )
+    generate_fn = _resolve_provider()
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -132,44 +196,27 @@ def generate_images(
 
         file_path = out / f"{idx:03d}.png"
         url = None
+        saved = False
 
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 logger.info(
-                    "[%d/%d] Generating image for '%s' (attempt %d/%d)...",
-                    idx + 1, total, title, attempt, MAX_RETRIES,
+                    "[%d/%d] Generating image for '%s' via %s (attempt %d/%d)...",
+                    idx + 1, total, title, IMAGE_PROVIDER, attempt, MAX_RETRIES,
                 )
 
-                payload: dict = {
-                    "model": IMAGE_MODEL,
-                    "prompt": prompt,
-                    "extra_body": {"response_format": "url"},
-                }
-                if size:
-                    payload["size"] = size
+                img_bytes, url = generate_fn(prompt, size)
 
-                data = _agnes_image_request(payload)
-                urls = _extract_image_urls(data)
-
-                if not urls:
-                    logger.warning("No image URL in Agnes response")
+                if len(img_bytes) < 1000:
+                    logger.warning("Image too small (%d bytes), retrying", len(img_bytes))
                     continue
 
-                image_url = urls[0]
-                logger.info("[%d/%d] Downloading from %s...", idx + 1, total, image_url[:80])
-
-                img_res = download_with_retry(image_url)
-
-                if len(img_res) < 1000:
-                    logger.warning("Image too small (%d bytes), retrying", len(img_res))
-                    continue
-
-                file_path.write_bytes(img_res)
-                url = image_url
+                file_path.write_bytes(img_bytes)
+                saved = True
 
                 logger.info(
                     "[%d/%d] Saved %s (%d bytes)",
-                    idx + 1, total, file_path.name, len(img_res),
+                    idx + 1, total, file_path.name, len(img_bytes),
                 )
                 break
 
@@ -181,12 +228,12 @@ def generate_images(
         results.append({
             "index": idx,
             "title": title,
-            "file_path": str(file_path.resolve()) if url else None,
-            "url": url,
+            "file_path": str(file_path.resolve()) if saved else None,
+            "url": url if saved else None,
             "prompt": prompt,
         })
 
     # Summary
-    succeeded = sum(1 for r in results if r["url"])
+    succeeded = sum(1 for r in results if r["file_path"])
     logger.info("Done: %d/%d images generated → %s", succeeded, total, out.resolve())
     return results

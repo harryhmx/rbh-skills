@@ -137,7 +137,8 @@ def transcribe(
         Default: ``"mlx-whisper"``.
     output_format : str
         Output format.  ``"md"`` (Markdown with timestamps as headings),
-        ``"txt"`` (plain text), ``"json"`` (raw segments JSON).
+        ``"txt"`` (plain text), ``"json"`` (raw segments JSON),
+        ``"srt"`` (SubRip subtitles with millisecond timestamps).
         Default: ``"md"``.
 
     Returns
@@ -169,6 +170,16 @@ def transcribe(
     if output_format == "txt":
         return "\n\n".join(seg["text"] for seg in segments)
 
+    if output_format == "srt":
+        blocks = []
+        for i, seg in enumerate(segments, start=1):
+            blocks.append(
+                f"{i}\n"
+                f"{_fmt_srt_time(seg['start'])} --> {_fmt_srt_time(seg['end'])}\n"
+                f"{seg['text']}\n"
+            )
+        return "\n".join(blocks)
+
     # md — default: format with timestamps
     lines = ["# Transcription\n"]
     for seg in segments:
@@ -186,3 +197,12 @@ def _fmt_time(seconds: float) -> str:
     m = int(seconds) // 60
     s = int(seconds) % 60
     return f"{m:02d}:{s:02d}"
+
+
+def _fmt_srt_time(seconds: float) -> str:
+    """Format seconds as SRT timestamp HH:MM:SS,mmm."""
+    ms = int(round(seconds * 1000))
+    h, rem = divmod(ms, 3_600_000)
+    m, rem = divmod(rem, 60_000)
+    s, ms = divmod(rem, 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"

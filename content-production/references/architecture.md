@@ -13,20 +13,22 @@ User Prompts / Documents
                 │       ▼
                 │   content-production (CLI)
                 │       │
-                │       ├── image ──> generate_images()
+                │       ├── image ──> generate_images()          [IMAGE_PROVIDER]
                 │       │               │
-                │       │               └── POST /v1/images/generations
-                │       │                       → Agnes AI → 000.png, 001.png, ...
+                │       │               ├── agnes:  POST /v1/images/generations → download URL
+                │       │               └── gemini: POST /v1beta/interactions (Nano Banana, inline base64)
+                │       │                       → 000.png, 001.png, ...
                 │       │
-                │       ├── video ──> generate_videos()
+                │       ├── video ──> generate_videos()          [VIDEO_PROVIDER]
                 │       │               │
-                │       │               ├── POST /v1/videos (create video)
-                │       │               ├── GET /v1/videos/{video_id} (parallel poll)
-                │       │               └── Download MP4 → 000.mp4, 001.mp4, ...
+                │       │               ├── agnes:  POST /v1/videos → GET /v1/videos/{id} (parallel poll)
+                │       │               └── gemini: :predictLongRunning (Veo) → poll operation → file URI
+                │       │                       → Download MP4 → 000.mp4, 001.mp4, ...
                 │       │
-                │       └── speech ─> generate_speech()
+                │       └── speech ─> generate_speech()          [SPEECH_PROVIDER]
                 │                       │
-                │                       └── SiliconFlow Fish Speech → 000.mp3, ...
+                │                       ├── siliconflow: Fish Speech → 000.mp3, ...
+                │                       └── gemini:      Gemini TTS (PCM→WAV) → 000.wav, ...
                 │                           (uses text field)
                 │
                 └── Binary documents (docx/pdf)
@@ -50,7 +52,7 @@ User Prompts / Documents
 
 ## Output consumed by
 
-- **video-converter**: receives images + audio for video synthesis
+- **media-composer**: receives images + audio for compositing and concatenation
 - **Direct publishing**: images published as article illustrations
 - **Manual editing**: images and audio files for further processing
 - **extract**: Agent reads the resulting `.txt` / `.csv` files

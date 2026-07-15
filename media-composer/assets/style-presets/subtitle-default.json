@@ -1,0 +1,11 @@
+{
+  "font": "PingFang SC",
+  "font_size": 12,
+  "color": "teal",
+  "position": "bottom",
+  "margin_v": 20,
+  "margin_lr": 28,
+  "outline": 2,
+  "shadow": 1,
+  "_note": "font_size is in libass PlayRes units, not pixels — calibrate by eye. Values reproduce bill-talks-v7."
+}

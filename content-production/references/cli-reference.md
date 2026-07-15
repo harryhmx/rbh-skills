@@ -54,8 +54,10 @@ Generate videos from a segments JSON. Saved as `000.mp4`, `001.mp4`, … in inde
 python scripts/cli.py video -i segments.json -o videos/ --size 1152x768 --num-frames 121 --frame-rate 24
 ```
 
-Generation is asynchronous — each video is submitted to Agnes AI, polled until complete (up to 15 min
-timeout), then downloaded. The JSON output includes a `video_id` per result.
+Generation is asynchronous — each video is submitted, polled until complete (up to 15 min timeout),
+then downloaded. The JSON output includes a `video_id` per result (Agnes video ID or Veo operation
+name). With `VIDEO_PROVIDER=gemini`, `--num-frames` / `--frame-rate` are ignored (Veo uses
+`GEMINI_VIDEO_DURATION` seconds) and `--size` maps to the nearest aspect ratio (16:9 / 9:16).
 
 | Argument | Short | Description | Default |
 |----------|-------|-------------|---------|
@@ -71,7 +73,8 @@ timeout), then downloaded. The JSON output includes a `video_id` per result.
 ## speech
 
 Generate speech audio from a segments JSON, using each segment's `text` field as the content.
-Saved as `000.mp3`, `001.mp3`, … in index order.
+Saved as `000.mp3`, `001.mp3`, … in index order (`SPEECH_PROVIDER=gemini` saves 24 kHz WAV:
+`000.wav`, `001.wav`, …).
 
 ```bash
 python scripts/cli.py speech -i segments.json -o audio/
@@ -138,8 +141,19 @@ DOCX uses python-docx (precise style mapping) with a mammoth fallback for corrup
 
 ## Configuration
 
-All keys, models, and defaults come from the shared `skills/.env` (one level above this skill). The
-CLI reads it automatically — no manual env setup.
+All keys, providers, models, and defaults come from the shared `skills/.env` (one level above this
+skill). The CLI reads it automatically — no manual env setup. Switching provider requires **no CLI
+changes** — set the `*_PROVIDER` variable and re-run the same command.
+
+### Provider switches
+
+| Variable | Options | Default |
+|----------|---------|---------|
+| `IMAGE_PROVIDER` | `agnes` \| `gemini` | `agnes` |
+| `VIDEO_PROVIDER` | `agnes` \| `gemini` | `agnes` |
+| `SPEECH_PROVIDER` | `siliconflow` \| `gemini` | `siliconflow` |
+
+### Agnes AI / SiliconFlow
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -157,3 +171,28 @@ CLI reads it automatically — no manual env setup.
 | `SPEECH_BASE_URL` | SiliconFlow API base URL | `https://api.siliconflow.com/v1` |
 | `SPEECH_MODEL` | Speech generation model | `fishaudio/fish-speech-1.5` |
 | `SPEECH_VOICE` | Speech voice preset | `fishaudio/fish-speech-1.5:anna` |
+
+### Gemini (Google AI)
+
+One `GEMINI_API_KEY` is shared by all three capabilities. Image and speech use the Interactions
+API (`POST /v1beta/interactions`, GA); video uses the Veo long-running-operations flow.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GEMINI_API_KEY` | Gemini API key (shared: image / video / speech) | (from .env) |
+| `GEMINI_BASE_URL` | Gemini API base URL | `https://generativelanguage.googleapis.com/v1beta` |
+| `GEMINI_IMAGE_MODEL` | Image model — Nano Banana 2 (Imagen is deprecated) | `gemini-3.1-flash-image` |
+| `GEMINI_IMAGE_SIZE` | Image resolution: `1K` / `2K` / `4K` | `1K` |
+| `GEMINI_VIDEO_MODEL` | Video model — Veo 3.1 (`veo-3.1-lite-generate-preview` for lower cost) | `veo-3.1-generate-preview` |
+| `GEMINI_VIDEO_DURATION` | Video length in seconds: `4` / `6` / `8` | `8` |
+| `GEMINI_VIDEO_RESOLUTION` | Video resolution: `720p` / `1080p` / `4k` (1080p+ requires 8s) | `720p` |
+| `GEMINI_VIDEO_CONCURRENCY` | Max in-flight Veo operations (sliding window; HTTP 429 re-queues with cooldown) | `4` |
+| `GEMINI_TTS_MODEL` | TTS model | `gemini-3.1-flash-tts-preview` |
+| `GEMINI_TTS_VOICE` | Prebuilt voice (Kore, Puck, Zephyr, Charon, …30 voices) | `Kore` |
+
+**Gemini provider notes:**
+
+- The CLI `--size WxH` is mapped to the **nearest supported aspect ratio** (images: 1:1 … 21:9;
+  videos: 16:9 / 9:16); exact pixel dimensions are not honored.
+- `--num-frames` / `--frame-rate` are Agnes-only and ignored by Veo (use `GEMINI_VIDEO_DURATION`).
+- Gemini TTS outputs 24 kHz mono WAV — files are saved as `000.wav`, … (not `.mp3`).

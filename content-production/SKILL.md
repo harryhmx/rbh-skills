@@ -1,13 +1,13 @@
 ---
 name: content-production
-description: "Generate images, video, and speech audio from structured segment JSON files. The Local Agent (Claude Code, Codex, etc.) creates the JSON from user prompts directly. Reads image_prompt/video_prompt fields for images/videos and text field for speech. Produces PNG images via Agnes AI, MP4 videos via Agnes AI, or MP3 audio via Fish Speech. Also extracts plain text from DOCX/PDF documents and converts DOCX to structured Markdown. Use when asked to 'generate images from prompts', 'create videos from descriptions', 'generate speech audio', 'convert prompts to images/videos', 'produce content from segments', 'extract text from a document', or 'convert a document to markdown'."
-version: "0.6.0"
+description: "Generate images, video, and speech audio from structured segment JSON files. The Local Agent (Claude Code, Codex, etc.) creates the JSON from user prompts directly. Reads image_prompt/video_prompt fields for images/videos and text field for speech. Multi-provider: PNG images via Agnes AI or Gemini (Nano Banana), MP4 videos via Agnes AI or Gemini (Veo), MP3/WAV audio via Fish Speech or Gemini TTS — switched per capability in .env. Also extracts plain text from DOCX/PDF documents and converts DOCX to structured Markdown. Use when asked to 'generate images from prompts', 'create videos from descriptions', 'generate speech audio', 'convert prompts to images/videos', 'produce content from segments', 'extract text from a document', or 'convert a document to markdown'."
+version: "0.7.0"
 allowed-tools: ["Bash", "Read", "Write"]
 ---
 
 # Content Production
 
-A **media-generation + document-conversion** toolbox. It reads a segments JSON (created by the Local Agent) and generates images / videos / speech, or it converts DOCX/PDF documents. All generation is **batch-mode from segments JSON**. This is the primary content-generation step of the RBH pipeline, feeding assets to `video-converter`.
+A **media-generation + document-conversion** toolbox. It reads a segments JSON (created by the Local Agent) and generates images / videos / speech, or it converts DOCX/PDF documents. All generation is **batch-mode from segments JSON**. This is the primary content-generation step of the RBH pipeline, feeding assets to `media-composer`.
 
 ## When to invoke — decision tree
 
@@ -36,7 +36,7 @@ incoming task
   │     ├─ structured (docx/pptx → markdown) → run `convert` (environment tools can't do this).
   │     └─ partial range (`--range`) → run `extract`.
   │
-  └─ none of the above → not this skill (story-generation / video-converter / media-composer …).
+  └─ none of the above → not this skill (story-generation / media-composer …).
 ```
 
 **One-liner:** if you can write it (Agent) or shell-command it (`textutil` / `pdftotext`), do that; only run this skill's CLI for generation APIs or deterministic document conversion.
@@ -44,7 +44,7 @@ incoming task
 ## Not this skill
 
 - **Story generation** → `story-generation` (FastAPI service)
-- **Compositing images + audio into video** → `video-converter`
+- **Compositing images + audio into video** → `media-composer` `composite` + `concat` subcommands
 - **Captioning images (overlay text)** → `media-composer` `caption` subcommand
 - **Writing / editing MD articles** → Agent-native; see `references/article-guide.md` for guidance
 
@@ -52,8 +52,8 @@ incoming task
 
 1. **Reads** a segments JSON file (created by Local Agent)
 2. **Extracts** `image_prompt`, `video_prompt`, or `text` from each segment
-3. **Generates** images (Agnes AI), videos (Agnes AI), or audio (Fish Speech)
-4. **Saves** files in index order as `000.png`, `000.mp4`, or `000.mp3`, …
+3. **Generates** images (Agnes AI / Gemini Nano Banana), videos (Agnes AI / Gemini Veo), or audio (Fish Speech / Gemini TTS) — provider switched via `IMAGE_PROVIDER` / `VIDEO_PROVIDER` / `SPEECH_PROVIDER` in `.env`, CLI unchanged
+4. **Saves** files in index order as `000.png`, `000.mp4`, or `000.mp3` (`.wav` for Gemini TTS), …
 5. **Extracts** plain text from DOCX/PDF → `.txt` (no formatting; supports partial ranges)
 6. **Converts** DOCX to structured Markdown (`.md`), preserving headings/lists/tables
 
@@ -112,7 +112,9 @@ Run from this skill's directory, calling the venv python directly (no `cd` / `ac
 
 ## Configuration
 
-Configured via the shared `skills/.env` (API keys, model/size/frame defaults). The CLI reads it
+Configured via the shared `skills/.env` (API keys, provider switches, model/size/frame defaults).
+Providers are selected per capability — `IMAGE_PROVIDER` / `VIDEO_PROVIDER` (agnes | gemini) and
+`SPEECH_PROVIDER` (siliconflow | gemini) — with no CLI changes. The CLI reads `.env`
 automatically — see [references/cli-reference.md](references/cli-reference.md#configuration) for the
 full variable list.
 

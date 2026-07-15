@@ -1,9 +1,15 @@
 """
-Video generation via Agnes AI (``agnes-video-v2.0``).
+Video generation — multi-provider dispatch (Agnes AI / Gemini Veo).
 
-All videos are submitted first in batch, then polled concurrently (round-robin)
-until each completes or fails, and finally downloaded.  This means total
-wall-clock time is roughly the slowest single video, not the sum of all videos.
+The provider is selected via ``VIDEO_PROVIDER`` in skills/.env:
+
+- ``agnes`` (default) — Agnes AI ``POST /v1/videos``: all videos are
+  submitted first in batch, then polled concurrently (round-robin) until each
+  completes or fails, and finally downloaded.  Total wall-clock time is
+  roughly the slowest single video, not the sum of all videos.
+- ``gemini`` — Google Veo via the Gemini API long-running operations flow
+  (same submit-all → poll → download pattern, implemented in
+  :mod:`scripts.gemini`).
 """
 
 from __future__ import annotations
@@ -19,6 +25,7 @@ from typing import Callable
 import requests as http_requests
 
 from scripts.common import (
+    VIDEO_PROVIDER,
     VIDEO_API_KEY,
     VIDEO_BASE_URL,
     VIDEO_MODEL,
@@ -27,6 +34,7 @@ from scripts.common import (
     VIDEO_FRAME_RATE_DEFAULT,
     VIDEO_POLL_TIMEOUT,
     VIDEO_POLL_INTERVAL,
+    GEMINI_API_KEY,
     logger,
 )
 
@@ -191,7 +199,9 @@ def generate_videos(
     num_frames: int = VIDEO_NUM_FRAMES_DEFAULT,
     frame_rate: float = VIDEO_FRAME_RATE_DEFAULT,
 ) -> list[dict]:
-    """Generate a video for each segment using Agnes AI (agnes-video-v2.0).
+    """Generate a video for each segment via the configured provider.
+
+    The provider is selected by ``VIDEO_PROVIDER`` (agnes / gemini).
 
     All videos are **submitted first in batch**, then **polled
     concurrently** (round-robin) until each completes or fails, and
@@ -206,17 +216,20 @@ def generate_videos(
         Segments from :func:`common.load_segments_json`.  Each must have an
         ``index`` and the *prompt_key* field.
     size : str
-        Video size in ``WxH`` format (e.g. ``"1024x768"``).
+        Video size in ``WxH`` format (e.g. ``"1024x768"``).  For Gemini the
+        size is mapped to the nearest supported aspect ratio.
     output_dir : str or Path
         Directory to save generated videos.
     prompt_key : str
         Which segment key holds the video generation prompt.
         Default: ``"video_prompt"``.
     num_frames : int
-        Number of frames. Must be <= 441 and satisfy ``8n + 1``
+        Agnes only — number of frames.  Must be <= 441 and satisfy ``8n + 1``
         (e.g. 81, 121, 241).  Default from ``VIDEO_NUM_FRAMES`` env.
+        Ignored by Gemini (Veo uses ``GEMINI_VIDEO_DURATION`` seconds).
     frame_rate : float
-        Frame rate in FPS (1–60).  Default from ``VIDEO_FRAME_RATE`` env.
+        Agnes only — frame rate in FPS (1–60).  Default from
+        ``VIDEO_FRAME_RATE`` env.  Ignored by Gemini.
 
     Returns
     -------
@@ -224,6 +237,26 @@ def generate_videos(
         Each dict has ``index``, ``title``, ``file_path``, ``url``,
         ``prompt``, and ``video_id`` keys.
     """
+    if VIDEO_PROVIDER == "gemini":
+        if not GEMINI_API_KEY:
+            raise RuntimeError(
+                "GEMINI_API_KEY is not set (required by VIDEO_PROVIDER=gemini). "
+                "Set it in skills/.env or as an environment variable."
+            )
+        from scripts.gemini import gemini_generate_videos
+
+        return gemini_generate_videos(
+            segments,
+            size=size,
+            output_dir=output_dir,
+            prompt_key=prompt_key,
+        )
+
+    if VIDEO_PROVIDER != "agnes":
+        raise RuntimeError(
+            f"Unknown VIDEO_PROVIDER '{VIDEO_PROVIDER}'. Supported: agnes, gemini."
+        )
+
     if not VIDEO_API_KEY:
         raise RuntimeError(
             "VIDEO_API_KEY is not set. "

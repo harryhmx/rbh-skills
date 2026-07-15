@@ -1,0 +1,11 @@
+{
+  "max_font_size": 40,
+  "text_color": [255, 255, 255, 255],
+  "box_color": [20, 20, 20, 152],
+  "box_radius": 14,
+  "padding_x": 22,
+  "padding_y": 12,
+  "margin_top": 28,
+  "supersample": 2,
+  "_note": "Rounded semi-transparent box + auto font-size shrink to fit one line. Values reproduce bill-talks-v6 title."
+}
