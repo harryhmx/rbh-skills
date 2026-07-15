@@ -12,16 +12,17 @@ from common.db import init_db
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-_sms_spec = importlib.util.spec_from_file_location(
-    "sms", Path(__file__).parent / "sms-auth" / "scripts" / "sms.py"
+# Import rbh-core functions
+_rbh_core_auth_spec = importlib.util.spec_from_file_location(
+    "rbh_core_auth", Path(__file__).parent / "rbh-core" / "scripts" / "auth.py"
 )
-_sms_mod = importlib.util.module_from_spec(_sms_spec)
-_sms_spec.loader.exec_module(_sms_mod)
-send_sms_verify_code = _sms_mod.send_sms_verify_code
-check_sms_verify_code = _sms_mod.check_sms_verify_code
+_rbh_core_auth_mod = importlib.util.module_from_spec(_rbh_core_auth_spec)
+_rbh_core_auth_spec.loader.exec_module(_rbh_core_auth_mod)
+send_sms_verify_code = _rbh_core_auth_mod.send_sms_verify_code
+check_sms_verify_code = _rbh_core_auth_mod.check_sms_verify_code
 
 _story_spec = importlib.util.spec_from_file_location(
-    "story", Path(__file__).parent / "story-generation" / "scripts" / "story.py"
+    "story", Path(__file__).parent / "adventure-academy" / "scripts" / "story.py"
 )
 _story_mod = importlib.util.module_from_spec(_story_spec)
 _story_spec.loader.exec_module(_story_mod)

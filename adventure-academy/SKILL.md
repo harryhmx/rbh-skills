@@ -1,13 +1,26 @@
 ---
-name: story-generation
-description: "Generate Story data via LLM and sync to Supabase. Use when creating new stories from project context and user profile."
+name: adventure-academy
+description: "Adventure Academy story generation — creates branching story chapters (RC/CT questions, depth/conclusion logic) with cover images and audio narration for RBH gamified English learning platform. Syncs to Supabase Story table. Use when generating stories, continuing branches, or checking media status."
+version: "1.0.0"
+allowed-tools: ["Bash", "Read", "Write"]
 ---
 
-# Story Generation
+# Adventure Academy
 
-Generates story data (title, content) from a project and user profile using an LLM, then inserts the record into the Supabase `Story` table.
+Generates story data (title, content, questions) from a project and user profile using an LLM, then inserts the record into the Supabase `Story` table.
 
-This is an **Internal Skill** — no API routes are registered. It is invoked directly by Claude Code.
+This skill provides **FastAPI routes** for story generation and status checking.
+
+## Consumption
+
+### FastAPI Routes (server.py)
+
+```bash
+POST /api/story/generate
+GET  /api/story/status/{story_id}
+```
+
+**Note**: CLI layer not implemented yet (complex logic, may have major adjustments).
 
 ## Use Cases
 
@@ -74,7 +87,7 @@ import importlib.util
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location(
-    "story", Path("story-generation/scripts/story.py")
+    "story", Path("adventure-academy/scripts/story.py")
 )
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)

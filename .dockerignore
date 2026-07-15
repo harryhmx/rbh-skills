@@ -1,0 +1,31 @@
+# CLI-only skills (not included in Railway deployment)
+content-production/
+media-composer/
+
+# Development files
+.env
+.env.local
+*.pyc
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation
+*.md
+!README.md
+
+# Test files
+tests/
+test_*.py
+*_test.py

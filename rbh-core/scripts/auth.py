@@ -1,3 +1,10 @@
+"""
+SMS authentication via Aliyun SDK.
+
+Migrated from sms-auth/scripts/sms.py.
+Functions maintain identical signatures for server.py compatibility.
+"""
+
 import re
 import time
 
@@ -30,6 +37,11 @@ def _create_client() -> Client:
 
 
 def send_sms_verify_code(phone_number: str) -> dict:
+    """Send SMS verification code to phone number.
+
+    Returns:
+        {"success": bool, "message": str, "cooldown_seconds": int}
+    """
     if not PHONE_REGEX.match(phone_number):
         return {"success": False, "message": "Invalid phone number format"}
 
@@ -59,6 +71,11 @@ def send_sms_verify_code(phone_number: str) -> dict:
 
 
 def check_sms_verify_code(phone_number: str, verify_code: str) -> dict:
+    """Verify SMS code for phone number.
+
+    Returns:
+        {"success": bool, "message": str, "error_type": str (optional)}
+    """
     if not verify_code:
         return {"success": False, "message": "Code is required", "error_type": "missing_code"}
 
