@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # Provider selection — which backend serves each capability.
-#   image:  "agnes" (default) | "gemini"
+#   image:  "agnes" (default) | "gemini" | "openai"
 #   video:  "agnes" (default) | "gemini"
 #   speech: "siliconflow" (default) | "gemini"
 IMAGE_PROVIDER = os.environ.get("IMAGE_PROVIDER", "agnes").strip().lower()
@@ -39,6 +39,13 @@ IMAGE_API_KEY = os.environ.get("IMAGE_API_KEY", "")
 IMAGE_BASE_URL = os.environ.get("IMAGE_BASE_URL", "https://apihub.agnes-ai.com")
 IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "agnes-image-2.1-flash")
 IMAGE_SIZE_DEFAULT = os.environ.get("IMAGE_SIZE", "1024x768")
+
+# OpenAI image generation
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+OPENAI_IMAGE_MODEL = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-2")
+OPENAI_IMAGE_TRANSPORT = os.environ.get("OPENAI_IMAGE_TRANSPORT", "curl").strip().lower()
+OPENAI_IMAGE_TIMEOUT = int(os.environ.get("OPENAI_IMAGE_TIMEOUT", "180"))
 
 # Video (Agnes AI)
 VIDEO_API_KEY = os.environ.get("VIDEO_API_KEY", "")
@@ -83,15 +90,43 @@ DOWNLOAD_BACKOFF_BASE = 2.0   # seconds, multiplied by 2^(attempt-1)
 # ---------------------------------------------------------------------------
 
 
-def load_segments_json(path: str | Path) -> list[dict]:
-    """Read a segments JSON file and return its ``segments`` list.
+def load_segments_json(path: str | Path, media_type: str = "image") -> list[dict]:
+    """Read and validate a media-segments JSON file.
 
-    The JSON can come from the Local Agent (default path).
+    The root contains only ``segments``. Each segment may contain the known
+    media fields, while *media_type* selects the required field for a command.
     """
+    if media_type not in {"image", "video", "speech"}:
+        raise ValueError(f"Unknown media type '{media_type}'")
+
     data = json.loads(Path(path).read_text(encoding="utf-8"))
-    segments = data.get("segments", [])
-    if not segments:
-        raise ValueError(f"No segments found in {path} (expected key 'segments')")
+    if not isinstance(data, dict):
+        raise ValueError("top-level JSON value must be an object")
+    if set(data) != {"segments"}:
+        unknown = sorted(set(data) - {"segments"})
+        raise ValueError(f"unknown top-level field(s): {', '.join(unknown)}")
+
+    segments = data.get("segments")
+    if not isinstance(segments, list) or not segments:
+        raise ValueError("segments must be a non-empty array")
+
+    allowed_fields = {"index", "title", "image_prompt", "video_prompt", "text"}
+    required_field = {"image": "image_prompt", "video": "video_prompt", "speech": "text"}[media_type]
+    for expected_index, segment in enumerate(segments):
+        if not isinstance(segment, dict):
+            raise ValueError("each segment must be an object")
+        unknown = sorted(set(segment) - allowed_fields)
+        if unknown:
+            raise ValueError(f"unknown segment field(s): {', '.join(unknown)}")
+        if type(segment.get("index")) is not int or segment["index"] < 0:
+            raise ValueError("segment index must be a non-negative integer")
+        if segment["index"] != expected_index:
+            raise ValueError("segment indexes must be contiguous and ordered from 0")
+        if not isinstance(segment.get("title"), str) or not segment["title"].strip():
+            raise ValueError("each segment requires a non-empty title")
+        if not isinstance(segment.get(required_field), str) or not segment[required_field].strip():
+            raise ValueError(f"each segment requires a non-empty {required_field}")
+
     return segments
 
 

@@ -210,7 +210,6 @@ def gemini_generate_videos(
     segments: list[dict],
     size: str,
     output_dir: str | Path = "output",
-    prompt_key: str = "video_prompt",
 ) -> list[dict]:
     """Generate a video for each segment via Veo.
 
@@ -237,16 +236,7 @@ def gemini_generate_videos(
     results: list[dict] = []
 
     for seg in sorted_segments:
-        idx = seg.get("index", 0)
-        if not seg.get(prompt_key, ""):
-            logger.warning("[%d/%d] No prompt for segment %d, skipping", idx + 1, total, idx)
-            results.append({
-                "index": idx, "title": seg.get("title", f"segment-{idx}"),
-                "file_path": None, "url": None, "prompt": "",
-                "video_id": None, "error": f"No '{prompt_key}' field",
-            })
-        else:
-            queue.append((seg, 0))
+        queue.append((seg, 0))
 
     pending: dict[str, dict] = {}  # operation name → meta
     deadline = time.time() + VIDEO_POLL_TIMEOUT
@@ -265,9 +255,9 @@ def gemini_generate_videos(
             and time.time() >= rate_limited_until
         ):
             seg, attempts = queue.pop(0)
-            idx = seg.get("index", 0)
-            title = seg.get("title", f"segment-{idx}")
-            prompt = seg.get(prompt_key, "")
+            idx = seg["index"]
+            title = seg["title"]
+            prompt = seg["video_prompt"]
             try:
                 logger.info(
                     "[%d/%d] Submitting Veo generation for '%s' (%s, %s, %ds, attempt %d)...",
@@ -363,10 +353,10 @@ def gemini_generate_videos(
             "error": f"Timed out after {VIDEO_POLL_TIMEOUT}s",
         })
     for seg, _attempts in queue:
-        idx = seg.get("index", 0)
+        idx = seg["index"]
         results.append({
-            "index": idx, "title": seg.get("title", f"segment-{idx}"),
-            "file_path": None, "url": None, "prompt": seg.get(prompt_key, ""),
+            "index": idx, "title": seg["title"],
+            "file_path": None, "url": None, "prompt": seg["video_prompt"],
             "video_id": None,
             "error": f"Timed out after {VIDEO_POLL_TIMEOUT}s (never submitted)",
         })

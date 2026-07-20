@@ -1,59 +1,41 @@
 # Content-Production Architecture
 
-How `content-production` fits in the RBH pipeline and what it produces. Loaded on demand for context
-— the [SKILL.md](../SKILL.md) overview has the trigger decision tree and the core run commands.
+`content-production` handles media generation and deterministic document conversion. Ordinary text and JSON authoring remains in the Local Agent.
 
-```
-User Prompts / Documents
+```text
+User requests actual image / video / speech generation
         │
         └── Local Agent
                 │
-                ├── creates segments.json directly from user prompts
+                ├── creates media-segments.json immediately before generation
                 │       │
                 │       ▼
-                │   content-production (CLI)
-                │       │
-                │       ├── image ──> generate_images()          [IMAGE_PROVIDER]
-                │       │               │
-                │       │               ├── agnes:  POST /v1/images/generations → download URL
-                │       │               └── gemini: POST /v1beta/interactions (Nano Banana, inline base64)
-                │       │                       → 000.png, 001.png, ...
-                │       │
-                │       ├── video ──> generate_videos()          [VIDEO_PROVIDER]
-                │       │               │
-                │       │               ├── agnes:  POST /v1/videos → GET /v1/videos/{id} (parallel poll)
-                │       │               └── gemini: :predictLongRunning (Veo) → poll operation → file URI
-                │       │                       → Download MP4 → 000.mp4, 001.mp4, ...
-                │       │
-                │       └── speech ─> generate_speech()          [SPEECH_PROVIDER]
-                │                       │
-                │                       ├── siliconflow: Fish Speech → 000.mp3, ...
-                │                       └── gemini:      Gemini TTS (PCM→WAV) → 000.wav, ...
-                │                           (uses text field)
+                │   content-production CLI
+                │       ├── image  → Agnes / Gemini → 000.png, ...
+                │       ├── video  → Agnes / Veo   → 000.mp4, ...
+                │       └── speech → Fish / Gemini → 000.mp3 or 000.wav, ...
                 │
-                └── Binary documents (docx/pdf)
-                        │
-                        ▼
-                content-production (CLI)
-                        │
-                        ├── extract ─> extract_text()
-                        │               │
-                        │               ├── DOCX: python-docx → .txt (per paragraph)
-                        │               └── PDF:  pypdf → .txt (per page)
-                        │               (--range selects a 1-indexed paragraph/page subset)
-                        │
-                        └── convert ─> convert_to_md()
-                                        │
-                                        └── DOCX: python-docx (+ mammoth fallback) → .md
-                                            (headings / lists / bold-italic / tables)
+                └── media files may feed media-composer
+
+DOCX / PDF document
+        │
+        └── content-production CLI
+                ├── extract: DOCX/PDF → plain text
+                └── convert: DOCX → structured Markdown
 ```
 
-> Image captioning (overlay text on images) has moved to **media-composer**'s `caption` subcommand.
+The media input is temporary CLI scaffolding, not an additional user-facing JSON deliverable. `extract` and `convert` neither consume nor create it.
 
-## Output consumed by
+## Provider flows
 
-- **media-composer**: receives images + audio for compositing and concatenation
-- **Direct publishing**: images published as article illustrations
-- **Manual editing**: images and audio files for further processing
-- **extract**: Agent reads the resulting `.txt` / `.csv` files
-- **convert**: Agent reads the resulting `.md` files (can be published directly or further edited)
+- **Image:** Agnes returns a URL that is downloaded; Gemini returns inline image bytes; OpenAI uses the Images API with curl by default or the OpenAI SDK as an alternative, accepts structured `size`, and returns base64 image bytes (or a URL when provided).
+- **Video:** Agnes submits all requests and polls them; Gemini/Veo uses long-running operations with bounded concurrency. Completed media is downloaded as soon as it is available.
+- **Speech:** SiliconFlow produces MP3; Gemini TTS returns PCM wrapped as WAV.
+
+## Downstream consumers
+
+- **media-composer:** compositing, concatenation, captioning, subtitles, and editing
+- **Direct publishing:** article illustrations and standalone generated media
+- **Agent-native follow-up:** read or edit extracted `.txt` and converted `.md` output
+
+PPTX and XLSX document processing are not currently supported.

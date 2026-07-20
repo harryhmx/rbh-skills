@@ -1,0 +1,9 @@
+{
+  "segments": [
+    {
+      "index": 0,
+      "title": "Example scene",
+      "image_prompt": "Describe the image to generate"
+    }
+  ]
+}

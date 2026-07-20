@@ -86,7 +86,7 @@ and the user provides none, either:
 
 ## Writing Style by Content Type
 
-### Educational / instructional articles (AdventureAA, HarryMath)
+### Educational / instructional articles (adventure-academy, HarryMath)
 
 - **Tone**: Warm, encouraging, authoritative but not condescending.
 - **Sentence length**: Shorter for younger audiences, normal for adults/teachers.
@@ -106,14 +106,14 @@ and the user provides none, either:
 
 ---
 
-## Pairing Articles with Media
+## Optional: Pairing Articles with Media
 
-When the article would benefit from images:
+Writing the article itself is always Agent-native. Continue to this workflow **only when the user actually requests generated images**; suggesting prompts or delivering an article alone must not create a media input file.
 
 1. After writing the article, identify 1–3 places where an illustration would add value
    (section openers, concept explanations, emotional moments).
 2. For each spot, write an `image_prompt` following `references/prompt-guide.md`.
-3. Create a `segments.json` with those prompts.
+3. Create `media-segments.json` using the schema in `references/cli-reference.md`.
 4. Run `content-production image` to generate the images.
 5. Insert `![](images/000.png)` links at the corresponding positions in the article.
 

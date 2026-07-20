@@ -1,31 +1,16 @@
 # Content-Production Examples
 
-End-to-end examples for each generation path. Loaded on demand. For argument details see
-[cli-reference.md](cli-reference.md); for the trigger decision tree see the [SKILL.md](../SKILL.md)
-overview.
+These examples create `media-segments.json` only because actual media generation follows. Do not create this file for ordinary article, Markdown, JSON, or prompt-writing requests.
 
-## Contents
-
-- [Example 1 — Direct from prompts (default path)](#example-1--direct-from-prompts-default-path)
-- [Example 2 — JSON output structure (image generation)](#example-2--json-output-structure-image-generation)
-- [Example 3 — Generate videos from segments](#example-3--generate-videos-from-segments)
-- [Example 4 — Speech generation](#example-4--speech-generation)
-
----
-
-## Example 1 — Direct from prompts (default path)
-
-The Local Agent creates a segments JSON directly from user prompts:
+## Image generation
 
 ```json
-// prompts.json — created by Local Agent
 {
-  "total_segments": 2,
   "segments": [
     {
       "index": 0,
       "title": "Sunset mountains",
-      "image_prompt": "A breathtaking sunset over snow-capped mountains, warm orange and pink sky, photorealistic, 4K"
+      "image_prompt": "A breathtaking sunset over snow-capped mountains, warm orange and pink sky, photorealistic"
     },
     {
       "index": 1,
@@ -37,85 +22,89 @@ The Local Agent creates a segments JSON directly from user prompts:
 ```
 
 ```bash
-# Generate images directly
-python scripts/cli.py image -i prompts.json -o images/
+python scripts/cli.py image -i media-segments.json -o images/
 ```
 
-Output:
-
-```
+```text
 images/
-├── 000.png   # Segment 0 image
-├── 001.png   # Segment 1 image
-├── 002.png   # Segment 2 image
-├── 003.png   # Segment 3 image
+├── 000.png
+└── 001.png
 ```
 
----
-
-## Example 2 — JSON output structure (image generation)
-
-The CLI prints a JSON summary to stdout after generation:
+The CLI summary contains two results because the input contains two segments:
 
 ```json
 {
-  "total": 4,
-  "succeeded": 4,
+  "total": 2,
+  "succeeded": 2,
   "failed": 0,
   "results": [
     {
       "index": 0,
-      "title": "Opening Scene",
+      "title": "Sunset mountains",
       "file_path": "/abs/path/to/images/000.png",
-      "url": "https://...",
-      "prompt": "A wide shot of a sunlit classroom..."
+      "url": "https://provider.example/image.png",
+      "prompt": "A breathtaking sunset over snow-capped mountains, warm orange and pink sky, photorealistic"
     }
   ]
 }
 ```
 
----
+## Reusing one input for several media types
 
-## Example 3 — Generate videos from segments
+A segment may contain all three known fields:
 
-The Local Agent creates a segments JSON with `video_prompt` fields, then:
+```json
+{
+  "segments": [
+    {
+      "index": 0,
+      "title": "Welcome",
+      "image_prompt": "A welcoming English classroom, warm morning light",
+      "video_prompt": "Slow camera movement through a welcoming English classroom in warm morning light",
+      "text": "Welcome to today's English adventure."
+    }
+  ]
+}
+```
 
 ```bash
-python scripts/cli.py video -i segments.json -o videos/ --size 1152x768 --num-frames 121 --frame-rate 24
+python scripts/cli.py image  -i media-segments.json -o images/
+python scripts/cli.py video  -i media-segments.json -o videos/
+python scripts/cli.py speech -i media-segments.json -o audio/
 ```
 
-Output:
+Agnes/SiliconFlow produce PNG, MP4, and MP3. Gemini image/video/speech produce PNG, MP4, and WAV.
 
+## Failed media items remain visible
+
+If one video times out, the batch still reports that input:
+
+```json
+{
+  "total": 2,
+  "succeeded": 1,
+  "failed": 1,
+  "results": [
+    {
+      "index": 1,
+      "title": "Closing scene",
+      "file_path": null,
+      "url": null,
+      "prompt": "Camera pulls away from the classroom at sunset",
+      "video_id": "video_123",
+      "error": "Timed out after 900s"
+    }
+  ]
+}
 ```
-videos/
-├── 000.mp4   # Segment 0 video
-├── 001.mp4   # Segment 1 video
-├── 002.mp4   # Segment 2 video
-├── 003.mp4   # Segment 3 video
-```
 
-Video generation is asynchronous — each video is submitted to Agnes AI, polled until complete (up to
-15 min timeout), then downloaded. The JSON output includes `video_id` for each video result.
+## Document conversion
 
----
-
-## Example 4 — Speech generation
-
-The Local Agent creates a segments JSON with `text` fields directly from user input.
+Document commands do not use or create a media input:
 
 ```bash
-# Generate speech audio
-python scripts/cli.py speech -i segments.json -o audio/
+python scripts/cli.py extract -i report.docx -o report.txt
+python scripts/cli.py extract -i paper.pdf --range 2-5 -o excerpt.txt
+python scripts/cli.py convert -i report.docx -o report.md
 ```
-
-Output:
-
-```
-audio/
-├── 000.mp3   # Segment 0 audio
-├── 001.mp3   # Segment 1 audio
-├── 002.mp3   # Segment 2 audio
-├── 003.mp3   # Segment 3 audio
-```
-
-The speech content comes from the `text` field.

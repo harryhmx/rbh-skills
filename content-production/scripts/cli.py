@@ -2,32 +2,32 @@
 """CLI entry point for content-production — generate images, video, and speech
 from segments JSON, and extract text / convert documents to Markdown.
 
-All media generation is batch-mode from segments JSON.  The JSON is created
-directly by the Local Agent (Claude Code / Codex / etc.) from user prompts.
-``extract`` / ``convert`` instead take a single source document.
+All media generation is batch-mode from a validated media-segments JSON input.
+The Local Agent creates this temporary input only immediately before actual
+media generation. ``extract`` / ``convert`` instead take a source document.
 
 Usage:
-    python scripts/cli.py image   -i <segments.json> [-o <dir>] [--size WxH] [--prompt-key image_prompt]
-    python scripts/cli.py video   -i <segments.json> [-o <dir>] [--size WxH] [--num-frames N] [--frame-rate FPS] [--prompt-key video_prompt]
-    python scripts/cli.py speech  -i <segments.json> [-o <dir>]
+    python scripts/cli.py image   -i <media-segments.json> [-o <dir>] [--size WxH]
+    python scripts/cli.py video   -i <media-segments.json> [-o <dir>] [--size WxH] [--num-frames N] [--frame-rate FPS]
+    python scripts/cli.py speech  -i <media-segments.json> [-o <dir>]
     python scripts/cli.py extract -i <file> [-o <out.txt>] [--range N-M] [--format docx|pdf]
     python scripts/cli.py convert -i <file> [-o <out.md>]  [--format docx]
 
 Examples:
     # Generate images from segments (default 1024x768)
-    python scripts/cli.py image -i ucla-segments.json -o images/
+    python scripts/cli.py image -i media-segments.json -o images/
 
     # Custom image size
-    python scripts/cli.py image -i ucla-segments.json -o images/ --size 512x512
+    python scripts/cli.py image -i media-segments.json -o images/ --size 512x512
 
     # Generate videos from segments
-    python scripts/cli.py video -i ucla-segments.json -o videos/
+    python scripts/cli.py video -i media-segments.json -o videos/
 
     # Custom video settings
-    python scripts/cli.py video -i ucla-segments.json -o videos/ --size 1024x768 --num-frames 121 --frame-rate 24
+    python scripts/cli.py video -i media-segments.json -o videos/ --size 1024x768 --num-frames 121 --frame-rate 24
 
     # Generate speech from segments (uses text field)
-    python scripts/cli.py speech -i ucla-segments.json -o audio/
+    python scripts/cli.py speech -i media-segments.json -o audio/
 
     # Extract plain text (full document)
     python scripts/cli.py extract -i report.docx -o report.txt
@@ -61,7 +61,13 @@ _skill_dir = Path(__file__).resolve().parents[1]
 if str(_skill_dir) not in sys.path:
     sys.path.insert(0, str(_skill_dir))
 
-from scripts.common import load_segments_json       # noqa: E402
+from scripts.common import (
+    IMAGE_SIZE_DEFAULT,
+    VIDEO_SIZE_DEFAULT,
+    VIDEO_NUM_FRAMES_DEFAULT,
+    VIDEO_FRAME_RATE_DEFAULT,
+    load_segments_json,
+)  # noqa: E402
 from scripts.images import generate_images          # noqa: E402
 from scripts.videos import generate_videos          # noqa: E402
 from scripts.speech import generate_speech          # noqa: E402
@@ -69,20 +75,43 @@ from scripts.extract import extract_text            # noqa: E402
 from scripts.convert import convert_to_md           # noqa: E402
 
 
+def _size(value: str) -> str:
+    try:
+        width_text, height_text = value.lower().split("x", 1)
+        width, height = int(width_text), int(height_text)
+    except (ValueError, AttributeError) as exc:
+        raise argparse.ArgumentTypeError("must be positive WxH dimensions") from exc
+    if width <= 0 or height <= 0:
+        raise argparse.ArgumentTypeError("must be positive WxH dimensions")
+    return value
+
+
+def _num_frames(value: str) -> int:
+    frames = int(value)
+    if frames <= 0 or frames > 441 or (frames - 1) % 8 != 0:
+        raise argparse.ArgumentTypeError("must be <= 441 and satisfy 8n+1")
+    return frames
+
+
+def _frame_rate(value: str) -> float:
+    rate = float(value)
+    if not 1 <= rate <= 60:
+        raise argparse.ArgumentTypeError("must be between 1 and 60")
+    return rate
 def cmd_image(args: argparse.Namespace) -> None:
     """Handle the ``image`` subcommand."""
     # 1. Load segments
     try:
-        segments = load_segments_json(args.input)
+        segments = load_segments_json(args.input, "image")
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(2)
 
     # 2. Validate size format
     size = args.size
     if "x" not in size:
         print("Error: --size must be in WxH format (e.g. 1024x768)", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(2)
 
     # 3. Generate images
     try:
@@ -90,7 +119,6 @@ def cmd_image(args: argparse.Namespace) -> None:
             segments,
             size=size,
             output_dir=args.output,
-            prompt_key=args.prompt_key,
         )
     except RuntimeError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -113,10 +141,10 @@ def cmd_speech(args: argparse.Namespace) -> None:
     """
     # 1. Load segments
     try:
-        segments = load_segments_json(args.input)
+        segments = load_segments_json(args.input, "speech")
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(2)
 
     # 2. Generate speech
     try:
@@ -142,16 +170,16 @@ def cmd_video(args: argparse.Namespace) -> None:
     """Handle the ``video`` subcommand."""
     # 1. Load segments
     try:
-        segments = load_segments_json(args.input)
+        segments = load_segments_json(args.input, "video")
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(2)
 
     # 2. Validate size format
     size = args.size
     if "x" not in size:
         print("Error: --size must be in WxH format (e.g. 1024x768)", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(2)
 
     # 3. Generate videos
     try:
@@ -159,7 +187,6 @@ def cmd_video(args: argparse.Namespace) -> None:
             segments,
             size=size,
             output_dir=args.output,
-            prompt_key=args.prompt_key,
             num_frames=args.num_frames,
             frame_rate=args.frame_rate,
         )
@@ -235,13 +262,9 @@ def main() -> None:
     )
     image_parser.add_argument(
         "--size",
-        default="1024x768",
-        help="Image size in WxH format (default: 1024x768)",
-    )
-    image_parser.add_argument(
-        "--prompt-key",
-        default="image_prompt",
-        help="Segment key containing the image prompt (default: image_prompt)",
+        type=_size,
+        default=IMAGE_SIZE_DEFAULT,
+        help=f"Image size in WxH format (default: {IMAGE_SIZE_DEFAULT})",
     )
 
     # ---- video ----
@@ -258,25 +281,21 @@ def main() -> None:
     )
     video_parser.add_argument(
         "--size",
-        default="1024x768",
-        help="Video size in WxH format (default: 1152x768)",
+        type=_size,
+        default=VIDEO_SIZE_DEFAULT,
+        help=f"Video size in WxH format (default: {VIDEO_SIZE_DEFAULT})",
     )
     video_parser.add_argument(
         "--num-frames",
-        type=int,
-        default=121,
-        help="Number of frames — must be <= 441 and satisfy 8n+1 (default: 121)",
+        type=_num_frames,
+        default=VIDEO_NUM_FRAMES_DEFAULT,
+        help=f"Number of frames — must be <= 441 and satisfy 8n+1 (default: {VIDEO_NUM_FRAMES_DEFAULT})",
     )
     video_parser.add_argument(
         "--frame-rate",
-        type=float,
-        default=24,
-        help="Frame rate in FPS, 1–60 (default: 24)",
-    )
-    video_parser.add_argument(
-        "--prompt-key",
-        default="video_prompt",
-        help="Segment key containing the video prompt (default: video_prompt)",
+        type=_frame_rate,
+        default=VIDEO_FRAME_RATE_DEFAULT,
+        help=f"Frame rate in FPS, 1–60 (default: {VIDEO_FRAME_RATE_DEFAULT:g})",
     )
 
     # ---- speech ----

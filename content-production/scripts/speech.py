@@ -104,8 +104,7 @@ def generate_speech(
     Parameters
     ----------
     segments : list[dict]
-        Segments from :func:`common.load_segments_json`.  Each should have ``index``,
-        ``title``, and ``text``.
+        Validated media segments with ``index``, ``title``, and ``text``.
     output_dir : str or Path
         Directory to save generated audio files.
 
@@ -122,20 +121,10 @@ def generate_speech(
     results = []
     total = len(segments)
 
-    for seg in sorted(segments, key=lambda s: s.get("index", 0)):
-        idx = seg.get("index", 0)
-        title = seg.get("title", f"segment-{idx}")
-
-        # Speech content comes from the "text" field
-        speech_text = seg.get("text", "").strip()
-
-        if not speech_text:
-            logger.warning("[%d/%d] No text for segment %d, skipping", idx + 1, total, idx)
-            results.append({
-                "index": idx, "title": title, "file_path": None,
-                "prompt": "", "error": "No 'text' field",
-            })
-            continue
+    for seg in segments:
+        idx = seg["index"]
+        title = seg["title"]
+        speech_text = seg["text"].strip()
 
         file_path = out / f"{idx:03d}{extension}"
 

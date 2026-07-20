@@ -1,5 +1,5 @@
 """
-Image generation — multi-provider dispatch (Agnes AI / Gemini).
+Image generation — multi-provider dispatch (Agnes AI / Gemini / OpenAI).
 
 The provider is selected via ``IMAGE_PROVIDER`` in skills/.env:
 
@@ -7,6 +7,7 @@ The provider is selected via ``IMAGE_PROVIDER`` in skills/.env:
   returned as a URL and downloaded.
 - ``gemini`` — Google Gemini API (Imagen or native Gemini image models),
   image returned inline as base64 bytes.
+- ``openai`` — OpenAI Images API using ``gpt-image-2``.
 """
 
 from __future__ import annotations
@@ -25,6 +26,11 @@ from scripts.common import (
     IMAGE_MODEL,
     IMAGE_SIZE_DEFAULT,
     GEMINI_API_KEY,
+    OPENAI_API_KEY,
+    OPENAI_BASE_URL,
+    OPENAI_IMAGE_MODEL,
+    OPENAI_IMAGE_TRANSPORT,
+    OPENAI_IMAGE_TIMEOUT,
     MAX_RETRIES,
     download_with_retry,
     logger,
@@ -107,12 +113,115 @@ def _generate_one_gemini(prompt: str, size: str) -> tuple[bytes, str | None]:
 
 
 # ---------------------------------------------------------------------------
-# Provider dispatch
+# OpenAI provider
 # ---------------------------------------------------------------------------
+
+
+def _generate_one_openai(prompt: str, size: str) -> tuple[bytes, str | None]:
+    """Generate one image through the OpenAI Images API using curl."""
+    if OPENAI_IMAGE_TRANSPORT not in {"curl", "sdk"}:
+        raise RuntimeError(
+            f"Unknown OPENAI_IMAGE_TRANSPORT '{OPENAI_IMAGE_TRANSPORT}'. "
+            "Supported: curl, sdk."
+        )
+    if OPENAI_IMAGE_TRANSPORT == "sdk":
+        return _generate_one_openai_sdk(prompt, size)
+
+    import base64
+    import subprocess
+
+    payload = json.dumps({
+        "model": OPENAI_IMAGE_MODEL,
+        "prompt": prompt,
+        "size": size,
+        "response_format": "b64_json",
+    })
+    try:
+        response = subprocess.run(
+            [
+                "curl", "-fsS", "--max-time", str(OPENAI_IMAGE_TIMEOUT),
+                "-X", "POST", f"{OPENAI_BASE_URL}/images/generations",
+                "-H", f"Authorization: Bearer {OPENAI_API_KEY}",
+                "-H", "Content-Type: application/json",
+                "--data-binary", "@-",
+            ],
+            input=payload.encode("utf-8"),
+            capture_output=True,
+            timeout=OPENAI_IMAGE_TIMEOUT + 10,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        detail = getattr(exc, "stderr", b"")
+        if isinstance(detail, bytes):
+            detail = detail.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"OpenAI curl request failed: {detail or exc}") from exc
+
+    try:
+        data = json.loads(response.stdout)
+        item = data["data"][0]
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError("OpenAI response did not contain image data") from exc
+
+    if isinstance(item, dict) and isinstance(item.get("b64_json"), str):
+        try:
+            return base64.b64decode(item["b64_json"]), None
+        except (ValueError, base64.binascii.Error) as exc:
+            raise RuntimeError("OpenAI response contained invalid base64 image data") from exc
+
+    if isinstance(item, dict) and isinstance(item.get("url"), str):
+        image_url = item["url"]
+        try:
+            downloaded = subprocess.run(
+                ["curl", "-fsSL", "--max-time", "120", image_url],
+                capture_output=True,
+                timeout=130,
+                check=True,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            detail = getattr(exc, "stderr", b"")
+            if isinstance(detail, bytes):
+                detail = detail.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"OpenAI image download failed: {detail or exc}") from exc
+        if not downloaded.stdout:
+            raise RuntimeError("OpenAI image download returned empty data")
+        return downloaded.stdout, image_url
+
+    raise RuntimeError("OpenAI response contained neither base64 image data nor image URL")
+
+
+def _generate_one_openai_sdk(prompt: str, size: str) -> tuple[bytes, str | None]:
+    """Generate one image through the OpenAI Python SDK."""
+    import base64
+    from openai import OpenAI
+
+    try:
+        client = OpenAI(
+            api_key=OPENAI_API_KEY,
+            base_url=OPENAI_BASE_URL,
+            timeout=float(OPENAI_IMAGE_TIMEOUT),
+            max_retries=0,
+        )
+        result = client.images.generate(
+            model=OPENAI_IMAGE_MODEL,
+            prompt=prompt,
+            size=size,
+            response_format="b64_json",
+        )
+        encoded = result.data[0].b64_json
+        if not encoded:
+            raise RuntimeError("OpenAI SDK response did not contain base64 image data")
+        return base64.b64decode(encoded), None
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"OpenAI SDK request failed: {exc}") from exc
+
+
 
 _PROVIDERS = {
     "agnes": (_generate_one_agnes, "IMAGE_API_KEY", lambda: IMAGE_API_KEY),
     "gemini": (_generate_one_gemini, "GEMINI_API_KEY", lambda: GEMINI_API_KEY),
+    "openai": (_generate_one_openai, "OPENAI_API_KEY", lambda: OPENAI_API_KEY),
 }
 
 
@@ -145,7 +254,7 @@ def generate_images(
 ) -> list[dict]:
     """Generate an image for each segment via the configured provider.
 
-    The provider is selected by ``IMAGE_PROVIDER`` (agnes / gemini).
+    The provider is selected by ``IMAGE_PROVIDER`` (agnes / gemini / openai).
     Images are saved to *output_dir* as ``{index:03d}.png`` in index order.
 
     Parameters

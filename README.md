@@ -8,7 +8,7 @@ Python-based skill modules for the RBH platform — each skill is a self-contain
 |-------|------|-------------|
 | **rbh-core** | API + CLI | SMS authentication (Aliyun), User management (registration/login), Project generation (LLM + Supabase sync). Provides both FastAPI routes and CLI for conversational Agent usage. |
 | **adventure-academy** | API | Story generation engine with branching chapters, RC/CT questions, cover images, and audio narration for gamified English learning. |
-| **content-production** | Agent Skill | Generate images/video/speech via pluggable providers (Agnes AI, Gemini/Veo, Fish Speech); extract plain text from DOCX/PDF; convert DOCX to Markdown. Local Agent creates or edits TXT/MD/JSON/... files from user prompts directly. |
+| **content-production** | Agent Skill | Generate images/video/speech via pluggable providers (Agnes AI, Gemini/Veo, OpenAI/gpt-image-2, Fish Speech); extract plain text from DOCX/PDF; convert DOCX to Markdown. Local Agent creates or edits TXT/MD/JSON/... files from user prompts directly. |
 | **media-composer** | Agent Skill | Media editing toolkit: STT transcription (MLX Whisper), caption/title overlay, trim, extract-audio, replace-segment, replace-bg (RVM matting), enhance (loudnorm), subtitle-burn, composite (image+audio → segments), concat. Last step of the pipeline. |
 
 ## Quick Start
@@ -42,9 +42,10 @@ pip install -r requirements.txt
 # For local Agent development (includes mlx-whisper, torch, etc.)
 pip install -r requirements-local.txt
 
-# Set up environment variables (see below)
-cp .env.example .env
-# Edit .env with your credentials
+# Create a .env file
+touch .env
+
+# Then, manually open the .env file and edit with your credentials
 ```
 
 **Option 2: One-Click Setup with Agent**
@@ -57,7 +58,7 @@ The agent will create the virtual environment, install dependencies, and guide y
 
 ### Environment Configuration
 
-Create a `.env` file in the `skills/` directory with the following content:
+Create (Edit) a `.env` file in the `skills/` directory with the following content:
 
 ```env
 # ========== SMS Authentication (Aliyun) ==========
@@ -75,15 +76,31 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-supabase-service-role-key
 
 # ========== Content Production ==========
-# Image generation (Agnes AI)
+# Image provider: agnes (default), gemini, or openai
+IMAGE_PROVIDER=your-model-provider  # agnes / gemini / openai
+
+# Agnes AI image generation
 IMAGE_API_KEY=your-agnes-ai-api-key
 IMAGE_BASE_URL=https://apihub.agnes-ai.com
-IMAGE_MODEL=agnes-imagine-pro
+IMAGE_MODEL=agnes-image-2.1-flash
+IMAGE_SIZE=1024x768
 
-# Video generation (Gemini/Veo or compatible)
-VIDEO_API_KEY=your-video-api-key
-VIDEO_BASE_URL=https://generativelanguage.googleapis.com/v1beta
-VIDEO_MODEL=gemini-2.0-flash-exp
+# OpenAI-compatible image generation (optional)
+# Keep the API key and any relay URL in this local .env file.
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_IMAGE_MODEL=gpt-image-2
+# curl is the default; sdk is also supported
+OPENAI_IMAGE_TRANSPORT=curl
+OPENAI_IMAGE_TIMEOUT=180
+
+# Gemini image/video/speech generation (optional)
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta
+GEMINI_IMAGE_MODEL=gemini-3.1-flash-image
+GEMINI_IMAGE_SIZE=1K
+
+# Video generation (Agnes/Gemini)
 
 # Speech synthesis (Fish Speech or compatible)
 SPEECH_API_KEY=your-speech-api-key
@@ -100,6 +117,77 @@ JWT_SECRET=your-jwt-secret-min-32-chars-recommended
 - `JWT_SECRET` should be at least 32 characters for security
 - `SUPABASE_KEY` requires service role key (not anon key) for admin operations
 - Keep `.env` file secure and never commit it to version control
+
+### Local Agent Integration (Required for Agent Skills)
+
+Local Agents (Claude Code, Codex, OpenClaw, Hermes, etc.) discover skills by scanning their own skills directory for folders containing a `SKILL.md`. Since you cloned this repo elsewhere, you must **symlink each skill directory** into your agent's skills directory — otherwise the agent cannot see or invoke the skills.
+
+Common skills directories:
+
+| Agent | Global (all projects) | Project-level (single project) |
+|-------|-----------------------|--------------------------------|
+| Claude Code | `~/.claude/skills/` | `<project>/.claude/skills/` |
+| Codex | `~/.codex/skills/` | `<project>/.codex/skills/` |
+| OpenClaw | `~/.openclaw/skills/` | `<project>/.openclaw/skills/` |
+| Hermes | `~/.hermes/skills/` | `<project>/.hermes/skills/` |
+
+> If your agent uses a different location, check its documentation — the linking steps are the same.
+
+**Global vs Project-level:**
+- **Global** — the skill is available in every agent session on your machine. Recommended for general-purpose skills like `content-production` and `media-composer`.
+- **Project-level** — the skill is only visible when the agent runs inside that project. Recommended when a skill is tied to one workspace (e.g. `rbh-core` / `adventure-academy` in your RBH content workspace), or when you want to keep the global list clean. If the project syncs to GitHub, add the symlinks to `.gitignore` (e.g. `.claude/skills/`) — they point to absolute paths on your machine and would break for anyone else.
+
+If the same skill exists in both locations, the project-level one takes precedence.
+
+Create the symlinks (macOS / Linux, using Claude Code as an example):
+
+```bash
+# Use the absolute path to your cloned repo
+SKILLS_REPO="$(pwd)"   # run from the skills/ repo root
+
+mkdir -p ~/.claude/skills
+
+ln -s "$SKILLS_REPO/rbh-core"           ~/.claude/skills/rbh-core
+ln -s "$SKILLS_REPO/adventure-academy"  ~/.claude/skills/adventure-academy
+ln -s "$SKILLS_REPO/content-production" ~/.claude/skills/content-production
+ln -s "$SKILLS_REPO/media-composer"     ~/.claude/skills/media-composer
+```
+
+For **project-level** installation, link into the project's own skills directory instead:
+
+```bash
+mkdir -p /path/to/your-project/.claude/skills
+
+ln -s "$SKILLS_REPO/rbh-core" /path/to/your-project/.claude/skills/rbh-core
+# ...repeat for other skills you need in this project
+```
+
+On Windows, use directory junctions instead (Command Prompt as Administrator):
+
+```cmd
+mklink /J "%USERPROFILE%\.claude\skills\rbh-core" "C:\path\to\skills\rbh-core"
+mklink /J "%USERPROFILE%\.claude\skills\adventure-academy" "C:\path\to\skills\adventure-academy"
+mklink /J "%USERPROFILE%\.claude\skills\content-production" "C:\path\to\skills\content-production"
+mklink /J "%USERPROFILE%\.claude\skills\media-composer" "C:\path\to\skills\media-composer"
+```
+
+**Important Notes:**
+- Link each **skill directory individually** — do not link the repo root, as agents only recognize folders that directly contain a `SKILL.md`
+- Always use **absolute paths** for the link target; relative targets break when the agent resolves them from its own directory
+- Symlinks mean `git pull` in the repo instantly updates the skills — no re-linking needed
+- If you only need part of the pipeline, link just the skills you use (e.g. `content-production` + `media-composer` for media work)
+
+Verify the links:
+
+```bash
+ls -la ~/.claude/skills/
+# Each entry should point to your cloned repo, e.g.:
+# content-production -> /path/to/skills/content-production
+```
+
+Then restart your agent and ask it to list available skills — the RBH skills should appear. You can test with a prompt like:
+
+> "Use the content-production skill to generate an image of a sunrise"
 
 ### Running the Server
 
@@ -208,7 +296,13 @@ find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null
 
 Set `JWT_SECRET` to at least 32 characters in `.env`
 
-**3. Virtual environment not found**
+**3. Agent does not detect the skills**
+
+- Confirm the symlinks exist and point to valid paths: `ls -la ~/.claude/skills/` (broken links show the target but the directory is missing)
+- Make sure you linked each skill directory (containing `SKILL.md`), not the repo root
+- Restart the agent session after creating the links
+
+**4. Virtual environment not found**
 
 ```bash
 # Recreate virtual environment

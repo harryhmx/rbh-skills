@@ -105,7 +105,7 @@ def _poll_all_videos(
     timeout: int,
     interval: int,
     on_completed: Callable[[str, dict], None] | None = None,
-) -> dict[str, dict]:
+) -> tuple[dict[str, dict], dict[str, str]]:
     """Poll multiple video generations concurrently until all complete or fail.
 
     Parameters
@@ -123,8 +123,8 @@ def _poll_all_videos(
 
     Returns
     -------
-    dict
-        Map of ``video_id → response_dict`` for all completed videos.
+    tuple[dict, dict]
+        Completed response data and failure messages, both keyed by video ID.
     """
     deadline = time.time() + timeout
     completed: dict[str, dict] = {}
@@ -183,7 +183,7 @@ def _poll_all_videos(
     if failed:
         logger.warning("%d video(s) failed/timed out: %s", len(failed), list(failed.keys()))
 
-    return completed
+    return completed, failed
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +195,6 @@ def generate_videos(
     segments: list[dict],
     size: str = VIDEO_SIZE_DEFAULT,
     output_dir: str | Path = "output",
-    prompt_key: str = "video_prompt",
     num_frames: int = VIDEO_NUM_FRAMES_DEFAULT,
     frame_rate: float = VIDEO_FRAME_RATE_DEFAULT,
 ) -> list[dict]:
@@ -213,16 +212,13 @@ def generate_videos(
     Parameters
     ----------
     segments : list[dict]
-        Segments from :func:`common.load_segments_json`.  Each must have an
-        ``index`` and the *prompt_key* field.
+        Validated media segments. Each has ``index``, ``title``, and
+        ``video_prompt``.
     size : str
         Video size in ``WxH`` format (e.g. ``"1024x768"``).  For Gemini the
         size is mapped to the nearest supported aspect ratio.
     output_dir : str or Path
         Directory to save generated videos.
-    prompt_key : str
-        Which segment key holds the video generation prompt.
-        Default: ``"video_prompt"``.
     num_frames : int
         Agnes only — number of frames.  Must be <= 441 and satisfy ``8n + 1``
         (e.g. 81, 121, 241).  Default from ``VIDEO_NUM_FRAMES`` env.
@@ -249,7 +245,6 @@ def generate_videos(
             segments,
             size=size,
             output_dir=output_dir,
-            prompt_key=prompt_key,
         )
 
     if VIDEO_PROVIDER != "agnes":
@@ -284,18 +279,9 @@ def generate_videos(
     submit_errors: dict[int, dict] = {}    # index → result (skipped / failed submit)
 
     for seg in sorted_segments:
-        idx = seg.get("index", 0)
-        title = seg.get("title", f"segment-{idx}")
-        prompt = seg.get(prompt_key, "")
-
-        if not prompt:
-            logger.warning("[%d/%d] No prompt for segment %d, skipping", idx + 1, total, idx)
-            submit_errors[idx] = {
-                "index": idx, "title": title, "file_path": None,
-                "url": None, "prompt": prompt, "video_id": None,
-                "error": f"No '{prompt_key}' field",
-            }
-            continue
+        idx = seg["index"]
+        title = seg["title"]
+        prompt = seg["video_prompt"]
 
         try:
             payload: dict = {
@@ -390,6 +376,12 @@ def generate_videos(
 
         except Exception as exc:
             logger.error("[%d] Video download failed: %s", idx, exc)
+            final_results.append({
+                "index": idx, "title": title, "file_path": None,
+                "url": None, "prompt": prompt, "video_id": vid,
+                "error": f"Video download failed: {exc}",
+            })
+            return
 
         final_results.append({
             "index": idx,
@@ -400,24 +392,24 @@ def generate_videos(
             "video_id": vid,
         })
 
-    completed_data = _poll_all_videos(
+    _completed_data, failed_data = _poll_all_videos(
         pending, VIDEO_POLL_TIMEOUT, VIDEO_POLL_INTERVAL,
         on_completed=_download_on_complete,
     )
 
-    # Any videos still in pending at this point are failures (timed out or failed)
-    for video_id, _meta in pending.items():
-        if video_id in video_meta:
-            submit_errors[video_meta[video_id]["index"]] = {
-                "index": video_meta[video_id]["index"],
-                "title": video_meta[video_id]["title"],
+    for video_id, error in failed_data.items():
+        meta = video_meta.get(video_id)
+        if meta:
+            submit_errors[meta["index"]] = {
+                "index": meta["index"],
+                "title": meta["title"],
                 "file_path": None, "url": None,
-                "prompt": video_meta[video_id]["prompt"],
+                "prompt": meta["prompt"],
                 "video_id": video_id,
-                "error": "Video did not complete within timeout",
+                "error": error,
             }
 
-    # Merge submit errors
+    # Merge submit and polling errors
     for err_result in submit_errors.values():
         final_results.append(err_result)
 
