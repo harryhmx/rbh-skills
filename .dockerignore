@@ -1,6 +1,7 @@
 # CLI-only skills (not included in Railway deployment)
 content-production/
 media-composer/
+models/
 
 # Development files
 .env

@@ -70,7 +70,7 @@ Every editing subcommand prints a JSON result (paths, timings, measured stats) t
 - **subtitle-burn** resolves a libass-capable ffmpeg by capability detection (env
   `MC_FFMPEG_FULL` → PATH → brew prefix → known locations); install `ffmpeg-full` on
   macOS if missing. `--font-size` is in libass PlayRes units, not pixels.
-- **replace-bg** needs `models/rvm_resnet50.pth` (~103 MB, gitignored) — run
+- **replace-bg** needs `../models/rvm_resnet50.pth` (~103 MB, gitignored) — run
   `python scripts/download_models.py` once. Requires torch (+ torchvision for resnet50);
   `--variant mobilenetv3` is lighter.
 - **caption** styles are fixed by `assets/style-presets/title-default.json` (rounded

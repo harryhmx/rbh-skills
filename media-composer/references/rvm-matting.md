@@ -36,7 +36,7 @@ ffmpeg encode <--stdin--- H.264 silent video → final audio mux
 | `rvm_mobilenetv3.pth` (~15 MB) | light (no torchvision) | (not pinned) |
 
 Source: `https://github.com/PeterL1n/RobustVideoMatting/releases/tag/v1.0.0`.
-Fetched by `scripts/download_models.py` into `models/` (gitignored).
+Fetched by `scripts/download_models.py` into `../models/` (gitignored).
 
 ## Vendored source
 

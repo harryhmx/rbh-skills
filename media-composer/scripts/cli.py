@@ -356,7 +356,7 @@ def main() -> None:
     p.add_argument("--variant", default="resnet50", choices=["resnet50", "mobilenetv3"],
                    help="RVM variant (mobilenetv3 is lighter, no torchvision needed)")
     p.add_argument("--checkpoint", default=None,
-                   help="Checkpoint path (default: models/rvm_<variant>.pth)")
+                   help="Checkpoint path (default: ../models/rvm_<variant>.pth)")
     p.add_argument("--chunk", type=int, default=8, help="Frames per model call (default: 8)")
     p.add_argument("--downsample-ratio", type=float, default=None,
                    help="Internal downsample ratio (default: auto, ~512px largest side)")

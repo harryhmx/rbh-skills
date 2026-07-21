@@ -35,3 +35,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Large model checkpoints (downloaded locally via media-composer/scripts/download_models.py)
+models/

@@ -208,6 +208,20 @@ curl http://localhost:8000/health
 # Expected: {"status":"ok"}
 ```
 
+## Model Checkpoints
+
+Large binary checkpoints used by the **media-composer** skill (`replace-bg`). They live in `models/` at the repo root — gitignored, so not tracked — and are fetched on first use.
+
+```bash
+python media-composer/scripts/download_models.py                     # rvm_resnet50.pth (default)
+python media-composer/scripts/download_models.py rvm_mobilenetv3.pth # optional lighter variant
+```
+
+| File | Used by | Size | Source | MD5 |
+|------|---------|------|--------|-----|
+| `rvm_resnet50.pth` | `replace-bg` | ~103 MB | [RobustVideoMatting v1.0.0](https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_resnet50.pth) | `04da1044ab32202b73a164f679824f39` |
+| `rvm_mobilenetv3.pth` | `replace-bg --variant mobilenetv3` (optional) | ~15 MB | [RobustVideoMatting v1.0.0](https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3.pth) | (not pinned) |
+
 ## Architecture
 
 ```

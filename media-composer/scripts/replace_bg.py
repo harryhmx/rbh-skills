@@ -22,7 +22,7 @@ Design notes:
   * Edges are refined to full resolution by RVM's default DeepGuidedFilter.
 
 Dependencies: torch (+ torchvision for the resnet50 backbone).  The
-checkpoint lives in ``models/`` (gitignored) — run
+checkpoint lives in ``../models/`` (gitignored) — run
 ``python scripts/download_models.py`` on first use.
 """
 

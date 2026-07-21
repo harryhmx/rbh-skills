@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Download the model checkpoints media-composer needs (currently RVM).
 
-Fetches from the official RobustVideoMatting release into ``models/`` and
+Fetches from the official RobustVideoMatting release into the shared ``../models/`` dir (skills repo root) and
 verifies md5.  Run directly, or let ``replace-bg`` prompt you when the
 checkpoint is missing.
 """
@@ -13,7 +13,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-MODELS_DIR = Path(__file__).resolve().parents[1] / "models"
+MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
 
 _RELEASE = "https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0"
 
@@ -33,7 +33,7 @@ def _md5(path: Path) -> str:
 
 
 def download(name: str, force: bool = False) -> Path:
-    """Download checkpoint *name* into models/ (skips if present and valid)."""
+    """Download checkpoint *name* into ../models/ (skips if present and valid)."""
     if name not in CHECKPOINTS:
         raise ValueError(f"Unknown checkpoint: {name} (choose {'/'.join(CHECKPOINTS)})")
     url, md5 = CHECKPOINTS[name]
