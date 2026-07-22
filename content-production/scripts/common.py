@@ -89,12 +89,44 @@ DOWNLOAD_BACKOFF_BASE = 2.0   # seconds, multiplied by 2^(attempt-1)
 # Public API — segments JSON loading
 # ---------------------------------------------------------------------------
 
+def build_filename(
+    name: str | None,
+    slug: str | None,
+    index: int,
+    extension: str,
+) -> str:
+    """Build a filename from optional top-level ``name`` and segment-level ``slug``.
 
-def load_segments_json(path: str | Path, media_type: str = "image") -> list[dict]:
+    Rules
+    -----
+    * name + slug      -> ``{name}-{slug}{ext}``
+    * name, no slug    -> ``{name}-{index:03d}{ext}``
+    * no name, slug    -> ``{slug}{ext}``
+    * no name, no slug -> ``{index:03d}{ext}``
+    """
+    if name:
+        if slug:
+            return f"{name}-{slug}{extension}"
+        return f"{name}-{index:03d}{extension}"
+    if slug:
+        return f"{slug}{extension}"
+    return f"{index:03d}{extension}"
+
+
+
+
+def load_segments_json(path: str | Path, media_type: str = "image") -> tuple[list[dict], str | None]:
     """Read and validate a media-segments JSON file.
 
-    The root contains only ``segments``. Each segment may contain the known
-    media fields, while *media_type* selects the required field for a command.
+    The root may contain ``segments`` (required) and ``name`` (optional
+    kebab-case string for filename prefixes).  Each segment may contain the
+    known media fields plus an optional ``slug`` (kebab-case string for
+    custom filenames).  *media_type* selects the required field for a command.
+
+    Returns
+    -------
+    tuple[list[dict], str | None]
+        Validated segments list and the optional top-level ``name`` value.
     """
     if media_type not in {"image", "video", "speech"}:
         raise ValueError(f"Unknown media type '{media_type}'")
@@ -102,15 +134,21 @@ def load_segments_json(path: str | Path, media_type: str = "image") -> list[dict
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("top-level JSON value must be an object")
-    if set(data) != {"segments"}:
-        unknown = sorted(set(data) - {"segments"})
+    allowed_top = {"segments", "name"}
+    unknown = sorted(set(data) - allowed_top)
+    if unknown:
         raise ValueError(f"unknown top-level field(s): {', '.join(unknown)}")
+
+    if data.get("name") is not None:
+        name_val = data["name"]
+        if not isinstance(name_val, str) or not name_val.strip():
+            raise ValueError("top-level 'name' must be a non-empty string")
 
     segments = data.get("segments")
     if not isinstance(segments, list) or not segments:
         raise ValueError("segments must be a non-empty array")
 
-    allowed_fields = {"index", "title", "image_prompt", "video_prompt", "text"}
+    allowed_fields = {"index", "title", "slug", "image_prompt", "video_prompt", "text"}
     required_field = {"image": "image_prompt", "video": "video_prompt", "speech": "text"}[media_type]
     for expected_index, segment in enumerate(segments):
         if not isinstance(segment, dict):
@@ -124,10 +162,13 @@ def load_segments_json(path: str | Path, media_type: str = "image") -> list[dict
             raise ValueError("segment indexes must be contiguous and ordered from 0")
         if not isinstance(segment.get("title"), str) or not segment["title"].strip():
             raise ValueError("each segment requires a non-empty title")
+        slug = segment.get("slug")
+        if slug is not None and (not isinstance(slug, str) or not slug.strip()):
+            raise ValueError("segment 'slug' must be a non-empty string when present")
         if not isinstance(segment.get(required_field), str) or not segment[required_field].strip():
             raise ValueError(f"each segment requires a non-empty {required_field}")
 
-    return segments
+    return segments, data.get("name")
 
 
 # ---------------------------------------------------------------------------

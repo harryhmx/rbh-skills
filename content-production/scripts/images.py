@@ -19,6 +19,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from scripts.common import build_filename
 from scripts.common import (
     IMAGE_PROVIDER,
     IMAGE_API_KEY,
@@ -242,12 +243,78 @@ def _resolve_provider():
 
 
 # ---------------------------------------------------------------------------
+# Single image generation
+# ---------------------------------------------------------------------------
+
+def generate_one_image(
+    prompt: str,
+    size: str = IMAGE_SIZE_DEFAULT,
+    output_path: str | Path | None = None,
+) -> dict:
+    """Generate a single image and save to *output_path*.
+
+    The provider is selected by ``IMAGE_PROVIDER``.
+
+    Parameters
+    ----------
+    prompt : str
+        Image generation prompt.
+    size : str
+        Image size in ``WxH`` format.
+    output_path : str or Path or None
+        Where to save the image.  If ``None``, saves to ``output.png``
+        in the current directory.
+
+    Returns
+    -------
+    dict
+        ``file_path`` (str or None), ``url`` (str or None), ``prompt`` (str).
+    """
+    generate_fn = _resolve_provider()
+
+    out = Path(output_path or "output.png")
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    url = None
+    saved = False
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            logger.info(
+                "Generating image via %s (attempt %d/%d)...",
+                IMAGE_PROVIDER, attempt, MAX_RETRIES,
+            )
+            img_bytes, url = generate_fn(prompt, size)
+
+            if len(img_bytes) < 1000:
+                logger.warning("Image too small (%d bytes), retrying", len(img_bytes))
+                continue
+
+            out.write_bytes(img_bytes)
+            saved = True
+            logger.info("Saved %s (%d bytes)", out.name, len(img_bytes))
+            break
+
+        except Exception as exc:
+            logger.warning("Attempt %d failed: %s", attempt, exc)
+            if attempt < MAX_RETRIES:
+                time.sleep(2)
+
+    return {
+        "file_path": str(out.resolve()) if saved else None,
+        "url": url if saved else None,
+        "prompt": prompt,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Batch image generation
 # ---------------------------------------------------------------------------
 
 
 def generate_images(
     segments: list[dict],
+    name: str | None = None,
     size: str = IMAGE_SIZE_DEFAULT,
     output_dir: str | Path = "output",
     prompt_key: str = "image_prompt",
@@ -255,13 +322,17 @@ def generate_images(
     """Generate an image for each segment via the configured provider.
 
     The provider is selected by ``IMAGE_PROVIDER`` (agnes / gemini / openai).
-    Images are saved to *output_dir* as ``{index:03d}.png`` in index order.
+    Images are saved to *output_dir*.  File naming uses the optional
+    top-level ``name`` and segment-level ``slug`` values, falling back to
+    ``{index:03d}.png`` when neither is set.
 
     Parameters
     ----------
     segments : list[dict]
         Segments from :func:`common.load_segments_json`.  Each must have an
         ``index`` and the *prompt_key* field.
+    name : str or None
+        Optional top-level project name for filename prefixes (kebab-case).
     size : str
         Image size in ``WxH`` format (e.g. ``"1024x768"``).  For Gemini the
         size is mapped to the nearest supported aspect ratio.
@@ -278,8 +349,6 @@ def generate_images(
         ``prompt`` keys.  ``url`` is the source URL for URL-based providers
         (Agnes) and ``None`` for inline-bytes providers (Gemini).
     """
-    generate_fn = _resolve_provider()
-
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -303,43 +372,14 @@ def generate_images(
             })
             continue
 
-        file_path = out / f"{idx:03d}.png"
-        url = None
-        saved = False
+        file_path = out / build_filename(name, seg.get("slug"), idx, ".png")
+        logger.info("[%d/%d] Generating image for '%s'...", idx + 1, total, title)
 
-        for attempt in range(1, MAX_RETRIES + 1):
-            try:
-                logger.info(
-                    "[%d/%d] Generating image for '%s' via %s (attempt %d/%d)...",
-                    idx + 1, total, title, IMAGE_PROVIDER, attempt, MAX_RETRIES,
-                )
-
-                img_bytes, url = generate_fn(prompt, size)
-
-                if len(img_bytes) < 1000:
-                    logger.warning("Image too small (%d bytes), retrying", len(img_bytes))
-                    continue
-
-                file_path.write_bytes(img_bytes)
-                saved = True
-
-                logger.info(
-                    "[%d/%d] Saved %s (%d bytes)",
-                    idx + 1, total, file_path.name, len(img_bytes),
-                )
-                break
-
-            except Exception as exc:
-                logger.warning("[%d/%d] Attempt %d failed: %s", idx + 1, total, attempt, exc)
-                if attempt < MAX_RETRIES:
-                    time.sleep(2)
-
+        result = generate_one_image(prompt, size, file_path)
         results.append({
             "index": idx,
             "title": title,
-            "file_path": str(file_path.resolve()) if saved else None,
-            "url": url if saved else None,
-            "prompt": prompt,
+            **result,
         })
 
     # Summary

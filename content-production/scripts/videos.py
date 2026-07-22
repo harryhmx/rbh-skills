@@ -24,6 +24,7 @@ from typing import Callable
 
 import requests as http_requests
 
+from scripts.common import build_filename
 from scripts.common import (
     VIDEO_PROVIDER,
     VIDEO_API_KEY,
@@ -55,6 +56,54 @@ def _extract_video_urls(data: dict) -> list[str]:
             if isinstance(item, dict):
                 urls.extend(_extract_video_urls(item))
     return list(dict.fromkeys(urls))
+
+
+
+
+def _submit_one_video_agnes(
+    prompt: str,
+    width: int,
+    height: int,
+    num_frames: int,
+    frame_rate: float,
+) -> str:
+    """Submit a single video generation request to Agnes AI. Returns the video ID."""
+    payload: dict = {
+        "model": VIDEO_MODEL,
+        "prompt": prompt,
+        "width": width,
+        "height": height,
+        "num_frames": num_frames,
+        "frame_rate": frame_rate,
+    }
+    logger.info(
+        "Submitting video generation (%dx%d, %d frames, %.0f fps)...",
+        width, height, num_frames, frame_rate,
+    )
+    data = _agnes_video_request(payload)
+    video_id = str(data.get("id", ""))
+    if not video_id:
+        raise RuntimeError("No video ID in response")
+    return video_id
+
+
+def _download_video_completed(
+    video_id: str, completed_data: dict, output_path: Path,
+) -> str | None:
+    """Download a completed video from the Agnes API. Returns the video URL or None."""
+    urls = _extract_video_urls(completed_data)
+    if not urls:
+        logger.warning("No video URL for video %s", video_id)
+        return None
+    video_url = urls[0]
+    logger.info("Downloading video from %s...", video_url[:80])
+    vid_res = http_requests.get(video_url, timeout=300)
+    vid_res.raise_for_status()
+    if len(vid_res.content) < 10000:
+        logger.warning("Video too small (%d bytes), may be invalid", len(vid_res.content))
+    output_path.write_bytes(vid_res.content)
+    logger.info("Saved %s (%d bytes)", output_path.name, len(vid_res.content))
+    return video_url
 
 
 def _agnes_video_request(payload: dict) -> dict:
@@ -191,8 +240,119 @@ def _poll_all_videos(
 # ---------------------------------------------------------------------------
 
 
+
+def generate_one_video_agnes(
+    prompt: str,
+    size: str,
+    output_path: str | Path,
+    num_frames: int = VIDEO_NUM_FRAMES_DEFAULT,
+    frame_rate: float = VIDEO_FRAME_RATE_DEFAULT,
+) -> dict:
+    """Generate a single video via Agnes AI (submit → poll → download).
+
+    Returns a result dict with ``file_path``, ``url``, ``prompt``, and ``video_id`` keys.
+    """
+    w_str, h_str = size.split("x")
+    width, height = int(w_str), int(h_str)
+    out = Path(output_path)
+
+    try:
+        video_id = _submit_one_video_agnes(prompt, width, height, num_frames, frame_rate)
+    except Exception as exc:
+        return {
+            "file_path": None, "url": None, "prompt": prompt,
+            "video_id": None, "error": f"Failed to submit: {exc}",
+        }
+
+    deadline = time.time() + VIDEO_POLL_TIMEOUT
+    while time.time() < deadline:
+        try:
+            data = _get_video(video_id)
+        except RuntimeError as exc:
+            return {
+                "file_path": None, "url": None, "prompt": prompt,
+                "video_id": video_id, "error": str(exc),
+            }
+        status = str(data.get("status", "")).lower()
+        if status == "completed":
+            break
+        elif status == "failed":
+            return {
+                "file_path": None, "url": None, "prompt": prompt,
+                "video_id": video_id,
+                "error": f"Video generation failed: {json.dumps(data)}",
+            }
+        time.sleep(VIDEO_POLL_INTERVAL)
+    else:
+        return {
+            "file_path": None, "url": None, "prompt": prompt,
+            "video_id": video_id,
+            "error": f"Timed out after {VIDEO_POLL_TIMEOUT}s",
+        }
+
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        url = _download_video_completed(video_id, data, out)
+        if not url:
+            return {
+                "file_path": None, "url": None, "prompt": prompt,
+                "video_id": video_id, "error": "No video URL in completed response",
+            }
+        return {
+            "file_path": str(out.resolve()),
+            "url": url, "prompt": prompt, "video_id": video_id,
+        }
+    except Exception as exc:
+        return {
+            "file_path": None, "url": None, "prompt": prompt,
+            "video_id": video_id, "error": f"Download failed: {exc}",
+        }
+
+
+
+def generate_one_video(
+    prompt: str,
+    size: str = VIDEO_SIZE_DEFAULT,
+    output_path: str | Path | None = None,
+    num_frames: int = VIDEO_NUM_FRAMES_DEFAULT,
+    frame_rate: float = VIDEO_FRAME_RATE_DEFAULT,
+) -> dict:
+    """Generate a single video via the configured provider.
+
+    The provider is selected by ``VIDEO_PROVIDER`` (agnes / gemini).
+    Returns a result dict with ``file_path``, ``url``, ``prompt``, and ``video_id``.
+    """
+    out = Path(output_path or "output.mp4")
+
+    if VIDEO_PROVIDER == "gemini":
+        if not GEMINI_API_KEY:
+            raise RuntimeError(
+                "GEMINI_API_KEY is not set (required by VIDEO_PROVIDER=gemini). "
+                "Set it in skills/.env or as an environment variable."
+            )
+        from scripts.gemini import gemini_generate_one_video
+
+        return gemini_generate_one_video(prompt, size, out)
+
+    if VIDEO_PROVIDER != "agnes":
+        raise RuntimeError(
+            f"Unknown VIDEO_PROVIDER '{VIDEO_PROVIDER}'. Supported: agnes, gemini."
+        )
+
+    if not VIDEO_API_KEY:
+        raise RuntimeError(
+            "VIDEO_API_KEY is not set. "
+            "Set it in skills/.env or as an environment variable."
+        )
+
+    return generate_one_video_agnes(prompt, size, out, num_frames, frame_rate)
+
+
+
+
 def generate_videos(
     segments: list[dict],
+    name: str | None = None,
     size: str = VIDEO_SIZE_DEFAULT,
     output_dir: str | Path = "output",
     num_frames: int = VIDEO_NUM_FRAMES_DEFAULT,
@@ -207,13 +367,17 @@ def generate_videos(
     finally downloaded.  This means total wall-clock time is roughly
     the slowest single video, not the sum of all videos.
 
-    Videos are saved to *output_dir* as ``{index:03d}.mp4`` in index order.
+    Videos are saved to *output_dir*.  File naming uses the optional
+    top-level ``name`` and segment-level ``slug`` values, falling back to
+    ``{index:03d}.mp4`` when neither is set.
 
     Parameters
     ----------
     segments : list[dict]
         Validated media segments. Each has ``index``, ``title``, and
         ``video_prompt``.
+    name : str or None
+        Optional top-level project name for filename prefixes (kebab-case).
     size : str
         Video size in ``WxH`` format (e.g. ``"1024x768"``).  For Gemini the
         size is mapped to the nearest supported aspect ratio.
@@ -245,6 +409,7 @@ def generate_videos(
             segments,
             size=size,
             output_dir=output_dir,
+            name=name,
         )
 
     if VIDEO_PROVIDER != "agnes":
@@ -284,38 +449,12 @@ def generate_videos(
         prompt = seg["video_prompt"]
 
         try:
-            payload: dict = {
-                "model": VIDEO_MODEL,
-                "prompt": prompt,
-                "width": width,
-                "height": height,
-                "num_frames": num_frames,
-                "frame_rate": frame_rate,
-            }
-            logger.info(
-                "[%d/%d] Submitting video generation for '%s' (%dx%d, %d frames, %.0f fps)...",
-                idx + 1, total, title, width, height, num_frames, frame_rate,
-            )
-
-            data = _agnes_video_request(payload)
-            video_id = str(data.get("id", ""))
-
-            if not video_id:
-                logger.warning("[%d/%d] No video ID in response, skipping", idx + 1, total)
-                submit_errors[idx] = {
-                    "index": idx, "title": title, "file_path": None,
-                    "url": None, "prompt": prompt, "video_id": None,
-                    "error": "No video ID in response",
-                }
-                continue
-
+            video_id = _submit_one_video_agnes(prompt, width, height, num_frames, frame_rate)
             logger.info("[%d/%d] Video created: %s", idx + 1, total, video_id)
             pending[video_id] = {"index": idx, "title": title}
             video_meta[video_id] = {
-                "index": idx,
-                "title": title,
-                "prompt": prompt,
-                "file_path": out / f"{idx:03d}.mp4",
+                "index": idx, "title": title, "prompt": prompt,
+                "file_path": out / build_filename(name, seg.get("slug"), idx, ".mp4"),
             }
             time.sleep(0.5)  # brief pause between submissions to avoid rate limits
 
@@ -347,11 +486,10 @@ def generate_videos(
         file_path = meta["file_path"]
         title = meta["title"]
         prompt = meta["prompt"]
-        url = None
 
         try:
-            urls = _extract_video_urls(data)
-            if not urls:
+            url = _download_video_completed(vid, data, file_path)
+            if not url:
                 logger.warning("[%d] No video URL for video %s", idx, vid)
                 final_results.append({
                     "index": idx, "title": title, "file_path": None,
@@ -359,21 +497,10 @@ def generate_videos(
                     "error": "No video URL in completed response",
                 })
                 return
-
-            video_url = urls[0]
-            logger.info("[%d] Downloading video from %s...", idx, video_url[:80])
-
-            vid_res = http_requests.get(video_url, timeout=300)
-            vid_res.raise_for_status()
-
-            if len(vid_res.content) < 10000:
-                logger.warning("[%d] Video too small (%d bytes), may be invalid", idx, len(vid_res.content))
-
-            file_path.write_bytes(vid_res.content)
-            url = video_url
-
-            logger.info("[%d] Saved %s (%d bytes)", idx, file_path.name, len(vid_res.content))
-
+            final_results.append({
+                "index": idx, "title": title, "file_path": str(file_path.resolve()),
+                "url": url, "prompt": prompt, "video_id": vid,
+            })
         except Exception as exc:
             logger.error("[%d] Video download failed: %s", idx, exc)
             final_results.append({
@@ -381,16 +508,7 @@ def generate_videos(
                 "url": None, "prompt": prompt, "video_id": vid,
                 "error": f"Video download failed: {exc}",
             })
-            return
 
-        final_results.append({
-            "index": idx,
-            "title": title,
-            "file_path": str(file_path.resolve()) if url else None,
-            "url": url,
-            "prompt": prompt,
-            "video_id": vid,
-        })
 
     _completed_data, failed_data = _poll_all_videos(
         pending, VIDEO_POLL_TIMEOUT, VIDEO_POLL_INTERVAL,
@@ -424,3 +542,9 @@ def generate_videos(
     succeeded = sum(1 for r in merged if r["url"])
     logger.info("Done: %d/%d videos generated → %s", succeeded, total, out.resolve())
     return merged
+
+
+# ---------------------------------------------------------------------------
+# Batch video generation
+# ---------------------------------------------------------------------------
+

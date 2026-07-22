@@ -1,7 +1,7 @@
 ---
 name: media-composer
-description: "Media editing toolkit — transcribe audio/video to text or SRT subtitles (STT via MLX Whisper), overlay captions/titles onto images and videos, overlay images onto video time windows, trim videos, extract audio tracks, replace segments with images, replace video backgrounds (RVM person matting), enhance audio/video quality (two-pass loudnorm), burn SRT subtitles, composite image+audio pairs into video segments, and concatenate videos. Deterministic ffmpeg + Pillow operations. Use when asked to 'transcribe audio', 'convert speech to text', 'generate subtitles', 'caption an image', 'overlay text', 'add a title to a video', 'insert an image into a video', 'trim video', 'extract audio from video', 'replace a segment', 'replace background', 'enhance video', 'burn subtitles', 'composite images and audio into video', or 'merge/concatenate videos'."
-version: "0.3.0"
+description: "Media editing toolkit — transcribe audio/video to text or SRT subtitles (STT via MLX Whisper), overlay captions/titles onto images and videos, overlay images onto video time windows, trim videos, extract audio tracks, replace segments with images, replace video backgrounds (RVM person matting), enhance audio/video quality (two-pass loudnorm), burn SRT subtitles, composite image+audio pairs into video segments, and concatenate videos. Deterministic ffmpeg + Pillow operations. Use when asked to 'transcribe audio', 'convert speech to text', 'generate subtitles', 'caption an image', 'overlay text', 'add a title to a video', 'insert an image into a video', 'trim video', 'extract audio from video', 'replace a segment', 'replace background', 'enhance video', 'burn subtitles', 'composite images and audio into video', 'stitch multiple images together', or 'merge/concatenate videos'."
+version: "0.4.1"
 allowed-tools: ["Bash", "Read", "Write"]
 ---
 
@@ -33,6 +33,7 @@ python scripts/cli.py <subcommand> --help
 | `subtitle-burn` | Burn an SRT into the picture | needs libass ffmpeg (auto-detected) |
 | `composite` | Image + audio pairs → MP4 segments | pairs by filename sort order |
 | `concat` | Join all videos in a directory | stream copy, no re-encode |
+| `stitch` | Combine multiple images into one (vertical/horizontal) | Pillow, no ffmpeg; spacing, alignment, background colour |
 
 ## Usage
 
@@ -62,6 +63,10 @@ python scripts/cli.py composite -i images/ -a audio/ -o segments/
 python scripts/cli.py concat -d segments/ -o final.mp4
 ```
 
+python scripts/cli.py stitch -o composite.jpg img1.jpg img2.jpg img3.jpg
+python scripts/cli.py stitch -o banner.png header.png body.png footer.png \
+  --direction vertical --spacing 8 --align center --background "#F5F5F5"
+
 Every editing subcommand prints a JSON result (paths, timings, measured stats) to stdout.
 
 ## Key behaviors
@@ -77,6 +82,10 @@ Every editing subcommand prints a JSON result (paths, timings, measured stats) t
   semi-transparent box, 2× supersampled CJK text, auto font-shrink to one line);
   `--font-size` and `--position` (top/center/bottom) are the tunables. Subtitle defaults
   live in `subtitle-default.json`.
+- **stitch** is a pure Pillow operation — no ffmpeg needed. Input images are converted
+  to RGB automatically (RGBA/grayscale handled). `--background` accepts `#RRGGBB`,
+  `#RGB`, or named colours. Mismatched alignment values (e.g. `--align top` with
+  `--direction vertical`) safely default to `center` with a warning.
 - **concat** uses the concat demuxer with stream copy — inputs must share codec,
   resolution and fps (true for `composite` output and same-model generated videos).
 - **overlay vs replace-segment** — `overlay` keeps the video visible around the image

@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """CLI entry point for content-production — generate images, video, and speech
-from segments JSON, and extract text / convert documents to Markdown.
+from segments JSON (batch) or directly via --prompt (single), and extract text /
+convert documents to Markdown.
 
-All media generation is batch-mode from a validated media-segments JSON input.
-The Local Agent creates this temporary input only immediately before actual
-media generation. ``extract`` / ``convert`` instead take a source document.
+The ``-i`` / ``--input`` flag runs batch generation from a validated
+media-segments JSON; the ``--prompt`` flag runs single generation directly.
+``extract`` / ``convert`` take a source document, not media segments.
 
 Usage:
     python scripts/cli.py image   -i <media-segments.json> [-o <dir>] [--size WxH]
+    python scripts/cli.py image   --prompt "prompt text" [-o <file>] [--size WxH]
     python scripts/cli.py video   -i <media-segments.json> [-o <dir>] [--size WxH] [--num-frames N] [--frame-rate FPS]
+    python scripts/cli.py video   --prompt "prompt text" [-o <file>] [--size WxH] [--num-frames N] [--frame-rate FPS]
     python scripts/cli.py speech  -i <media-segments.json> [-o <dir>]
+    python scripts/cli.py speech  --prompt "speech text" [-o <file>]
     python scripts/cli.py extract -i <file> [-o <out.txt>] [--range N-M] [--format docx|pdf]
     python scripts/cli.py convert -i <file> [-o <out.md>]  [--format docx]
 
@@ -20,14 +24,23 @@ Examples:
     # Custom image size
     python scripts/cli.py image -i media-segments.json -o images/ --size 512x512
 
+    # Single image from prompt
+    python scripts/cli.py image --prompt "A sunset over mountains" -o sunset.png
+
     # Generate videos from segments
     python scripts/cli.py video -i media-segments.json -o videos/
 
     # Custom video settings
     python scripts/cli.py video -i media-segments.json -o videos/ --size 1024x768 --num-frames 121 --frame-rate 24
 
+    # Single video from prompt
+    python scripts/cli.py video --prompt "A car driving through the desert" -o car.mp4
+
     # Generate speech from segments (uses text field)
     python scripts/cli.py speech -i media-segments.json -o audio/
+
+    # Single speech from text
+    python scripts/cli.py speech --prompt "Hello, welcome to the lesson." -o greeting.mp3
 
     # Extract plain text (full document)
     python scripts/cli.py extract -i report.docx -o report.txt
@@ -46,6 +59,7 @@ import argparse
 import json
 import logging
 import sys
+import os
 from pathlib import Path
 
 logging.basicConfig(
@@ -68,9 +82,16 @@ from scripts.common import (
     VIDEO_FRAME_RATE_DEFAULT,
     load_segments_json,
 )  # noqa: E402
+
 from scripts.images import generate_images          # noqa: E402
+from scripts.images import generate_one_image       # noqa: E402
+
 from scripts.videos import generate_videos          # noqa: E402
+from scripts.videos import generate_one_video       # noqa: E402
+
 from scripts.speech import generate_speech          # noqa: E402
+from scripts.speech import generate_one_speech      # noqa: E402
+
 from scripts.extract import extract_text            # noqa: E402
 from scripts.convert import convert_to_md           # noqa: E402
 
@@ -98,40 +119,70 @@ def _frame_rate(value: str) -> float:
     if not 1 <= rate <= 60:
         raise argparse.ArgumentTypeError("must be between 1 and 60")
     return rate
+def _single_output_path(output_arg: str | None, default_name: str) -> Path:
+    """Resolve output path for single-generation commands.
+
+    - If *output_arg* is None -> returns *default_name* in the current directory.
+    - If *output_arg* ends with / or is an existing directory -> saves
+      *default_name* inside it.
+    - Otherwise -> treated as an exact file path.
+    """
+    if output_arg is None:
+        return Path(default_name)
+    p = Path(output_arg)
+    if output_arg.endswith(('/', os.sep)) or p.is_dir():
+        p.mkdir(parents=True, exist_ok=True)
+        return p / default_name
+    return p
+
+
 def cmd_image(args: argparse.Namespace) -> None:
     """Handle the ``image`` subcommand."""
-    # 1. Load segments
-    try:
-        segments = load_segments_json(args.input, "image")
-    except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(2)
+    if args.prompt:
+        # ---- Single generation from --prompt ----
+        size = args.size
+        if "x" not in size:
+            print("Error: --size must be in WxH format (e.g. 1024x768)", file=sys.stderr)
+            sys.exit(2)
 
-    # 2. Validate size format
-    size = args.size
-    if "x" not in size:
-        print("Error: --size must be in WxH format (e.g. 1024x768)", file=sys.stderr)
-        sys.exit(2)
+        output_path = _single_output_path(args.output, "output.png")
 
-    # 3. Generate images
-    try:
-        results = generate_images(
-            segments,
-            size=size,
-            output_dir=args.output,
-        )
-    except RuntimeError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        try:
+            result = generate_one_image(args.prompt, size, output_path)
+        except RuntimeError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
 
-    # 4. Print summary
-    succeeded = sum(1 for r in results if r["file_path"])
-    print(json.dumps({
-        "total": len(results),
-        "succeeded": succeeded,
-        "failed": len(results) - succeeded,
-        "results": results,
-    }, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif args.input:
+        # ---- Batch generation from JSON ----
+        try:
+            segments, name = load_segments_json(args.input, "image")
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(2)
+
+        size = args.size
+        if "x" not in size:
+            print("Error: --size must be in WxH format (e.g. 1024x768)", file=sys.stderr)
+            sys.exit(2)
+
+        try:
+            results = generate_images(
+                segments,
+                name=name,
+                size=size,
+                output_dir=args.output,
+            )
+        except RuntimeError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        succeeded = sum(1 for r in results if r["file_path"])
+        print(json.dumps({
+            "total": len(results), "succeeded": succeeded,
+            "failed": len(results) - succeeded, "results": results,
+        }, ensure_ascii=False, indent=2))
 
 
 def cmd_speech(args: argparse.Namespace) -> None:
@@ -139,69 +190,90 @@ def cmd_speech(args: argparse.Namespace) -> None:
 
     Uses the segment's ``text`` field as speech content.
     """
-    # 1. Load segments
-    try:
-        segments = load_segments_json(args.input, "speech")
-    except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(2)
+    if args.prompt:
+        # ---- Single generation from --prompt ----
+        output_path = _single_output_path(args.output, "output.mp3")
 
-    # 2. Generate speech
-    try:
-        results = generate_speech(
-            segments,
-            output_dir=args.output,
-        )
-    except RuntimeError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        try:
+            result = generate_one_speech(args.prompt, output_path)
+        except RuntimeError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
 
-    # 3. Print summary
-    succeeded = sum(1 for r in results if r["file_path"])
-    print(json.dumps({
-        "total": len(results),
-        "succeeded": succeeded,
-        "failed": len(results) - succeeded,
-        "results": results,
-    }, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif args.input:
+        # ---- Batch generation from JSON ----
+        try:
+            segments, name = load_segments_json(args.input, "speech")
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(2)
+
+        try:
+            results = generate_speech(
+                segments,
+                name=name,
+                output_dir=args.output,
+            )
+        except RuntimeError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        succeeded = sum(1 for r in results if r["file_path"])
+        print(json.dumps({
+            "total": len(results), "succeeded": succeeded,
+            "failed": len(results) - succeeded, "results": results,
+        }, ensure_ascii=False, indent=2))
 
 
 def cmd_video(args: argparse.Namespace) -> None:
     """Handle the ``video`` subcommand."""
-    # 1. Load segments
-    try:
-        segments = load_segments_json(args.input, "video")
-    except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(2)
+    if args.prompt:
+        # ---- Single generation from --prompt ----
+        size = args.size
+        if "x" not in size:
+            print("Error: --size must be in WxH format (e.g. 1024x768)", file=sys.stderr)
+            sys.exit(2)
 
-    # 2. Validate size format
-    size = args.size
-    if "x" not in size:
-        print("Error: --size must be in WxH format (e.g. 1024x768)", file=sys.stderr)
-        sys.exit(2)
+        output_path = _single_output_path(args.output, "output.mp4")
 
-    # 3. Generate videos
-    try:
-        results = generate_videos(
-            segments,
-            size=size,
-            output_dir=args.output,
-            num_frames=args.num_frames,
-            frame_rate=args.frame_rate,
-        )
-    except RuntimeError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        try:
+            result = generate_one_video(
+                args.prompt, size, output_path,
+                num_frames=args.num_frames, frame_rate=args.frame_rate,
+            )
+        except RuntimeError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
 
-    # 4. Print summary
-    succeeded = sum(1 for r in results if r["file_path"])
-    print(json.dumps({
-        "total": len(results),
-        "succeeded": succeeded,
-        "failed": len(results) - succeeded,
-        "results": results,
-    }, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif args.input:
+        # ---- Batch generation from JSON ----
+        try:
+            segments, name = load_segments_json(args.input, "video")
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(2)
+
+        size = args.size
+        if "x" not in size:
+            print("Error: --size must be in WxH format (e.g. 1024x768)", file=sys.stderr)
+            sys.exit(2)
+
+        try:
+            results = generate_videos(
+                segments, name=name, size=size, output_dir=args.output,
+                num_frames=args.num_frames, frame_rate=args.frame_rate,
+            )
+        except RuntimeError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        succeeded = sum(1 for r in results if r["file_path"])
+        print(json.dumps({
+            "total": len(results), "succeeded": succeeded,
+            "failed": len(results) - succeeded, "results": results,
+        }, ensure_ascii=False, indent=2))
 
 
 def _write_text_output(text: str, output: str | None) -> None:
@@ -252,13 +324,20 @@ def main() -> None:
     image_parser = subparsers.add_parser("image", help="Generate images from segments")
     image_parser.add_argument(
         "-i", "--input",
-        required=True,
-        help="Path to segments JSON file (from Local Agent)",
+        required=False,
+        default=None,
+        help="Path to segments JSON file (required for batch mode)",
+    )
+    image_parser.add_argument(
+        "--prompt",
+        required=False,
+        default=None,
+        help="Prompt text for single-image generation (use instead of -i)",
     )
     image_parser.add_argument(
         "-o", "--output",
         default="output",
-        help="Output directory for generated images (default: output/)",
+        help="Output directory or file path (default: output/)",
     )
     image_parser.add_argument(
         "--size",
@@ -271,13 +350,20 @@ def main() -> None:
     video_parser = subparsers.add_parser("video", help="Generate videos from segments")
     video_parser.add_argument(
         "-i", "--input",
-        required=True,
-        help="Path to segments JSON file (from Local Agent)",
+        required=False,
+        default=None,
+        help="Path to segments JSON file (required for batch mode)",
+    )
+    video_parser.add_argument(
+        "--prompt",
+        required=False,
+        default=None,
+        help="Prompt text for single-video generation (use instead of -i)",
     )
     video_parser.add_argument(
         "-o", "--output",
         default="output",
-        help="Output directory for generated videos (default: output/)",
+        help="Output directory or file path (default: output/)",
     )
     video_parser.add_argument(
         "--size",
@@ -302,13 +388,20 @@ def main() -> None:
     speech_parser = subparsers.add_parser("speech", help="Generate speech audio from segments")
     speech_parser.add_argument(
         "-i", "--input",
-        required=True,
-        help="Path to segments JSON file (from Local Agent)",
+        required=False,
+        default=None,
+        help="Path to segments JSON file (required for batch mode)",
+    )
+    speech_parser.add_argument(
+        "--prompt",
+        required=False,
+        default=None,
+        help="Text to speak for single-speech generation (use instead of -i)",
     )
     speech_parser.add_argument(
         "-o", "--output",
         default="output",
-        help="Output directory for generated audio (default: output/)",
+        help="Output directory or file path (default: output/)",
     )
 
     # ---- extract ----

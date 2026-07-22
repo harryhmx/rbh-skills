@@ -9,7 +9,7 @@ Python-based skill modules for the RBH platform — each skill is a self-contain
 | **rbh-core** | API + CLI | SMS authentication (Aliyun), User management (registration/login), Project generation (LLM + Supabase sync). Provides both FastAPI routes and CLI for conversational Agent usage. |
 | **adventure-academy** | API | Story generation engine with branching chapters, RC/CT questions, cover images, and audio narration for gamified English learning. |
 | **content-production** | Agent Skill | Generate images/video/speech via pluggable providers (Agnes AI, Gemini/Veo, OpenAI/gpt-image-2, Fish Speech); extract plain text from DOCX/PDF; convert DOCX to Markdown. Local Agent creates or edits TXT/MD/JSON/... files from user prompts directly. |
-| **media-composer** | Agent Skill | Media editing toolkit: STT transcription (MLX Whisper), caption/title overlay, trim, extract-audio, replace-segment, replace-bg (RVM matting), enhance (loudnorm), subtitle-burn, composite (image+audio → segments), concat. Last step of the pipeline. |
+| **media-composer** | Agent Skill | Media editing toolkit: STT transcription (MLX Whisper), caption/title overlay, trim, extract-audio, replace-segment, replace-bg (RVM matting), enhance (loudnorm), subtitle-burn, composite (image+audio → segments), concat, stitch (multi-image → one composite). Last step of the pipeline. |
 
 ## Quick Start
 

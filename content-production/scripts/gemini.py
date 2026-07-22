@@ -26,6 +26,7 @@ import wave
 from pathlib import Path
 
 from scripts.common import (
+    build_filename,
     GEMINI_API_KEY,
     GEMINI_BASE_URL,
     GEMINI_IMAGE_MODEL,
@@ -206,10 +207,45 @@ def _extract_video_uri(operation: dict) -> str:
     )
 
 
+
+
+def _process_veo_completion(
+    op_name: str, operation: dict, output_path: Path,
+) -> dict:
+    """Download a completed Veo video and return a result dict.
+
+    Returns ``{file_path, url, video_id}`` on success, or
+    ``{file_path: None, url: None, video_id, error}`` on failure.
+    """
+    if operation.get("error"):
+        return {
+            "file_path": None, "url": None, "video_id": op_name,
+            "error": f"Veo generation failed: {json.dumps(operation['error'])}",
+        }
+
+    try:
+        uri = _extract_video_uri(operation)
+        logger.info("Downloading video from %s...", uri[:80])
+        video_bytes = _gemini_download(uri)
+        Path(output_path).write_bytes(video_bytes)
+        logger.info("Saved %s (%d bytes)", output_path.name, len(video_bytes))
+        return {
+            "file_path": str(Path(output_path).resolve()),
+            "url": uri, "video_id": op_name,
+        }
+    except Exception as exc:
+        logger.warning("Video download failed: %s", exc)
+        return {
+            "file_path": None, "url": None, "video_id": op_name,
+            "error": f"Download failed: {exc}",
+        }
+
+
 def gemini_generate_videos(
     segments: list[dict],
     size: str,
     output_dir: str | Path = "output",
+    name: str | None = None,
 ) -> list[dict]:
     """Generate a video for each segment via Veo.
 
@@ -218,7 +254,7 @@ def gemini_generate_videos(
     ``GEMINI_VIDEO_CONCURRENCY`` operations are in flight, new segments are
     submitted as slots free up, and HTTP 429 responses re-queue the segment
     after a cooldown.  Videos are saved to *output_dir* as
-    ``{index:03d}.mp4`` in index order.
+    ``{index:03d}.mp4`` when neither is set (uses ``name``/``slug``).
 
     Returns the same result-dict shape as the Agnes provider (``video_id``
     holds the Veo operation name).
@@ -270,7 +306,7 @@ def gemini_generate_videos(
                     "index": idx,
                     "title": title,
                     "prompt": prompt,
-                    "file_path": out / f"{idx:03d}.mp4",
+                    "file_path": out / build_filename(name, seg.get("slug"), idx, ".mp4"),
                 }
             except Exception as exc:
                 if _is_rate_limited(exc) and attempts + 1 < _VEO_SUBMIT_MAX_ATTEMPTS:
@@ -309,37 +345,17 @@ def gemini_generate_videos(
 
             del pending[op_name]
 
-            if operation.get("error"):
-                logger.error("[%d] Veo failed: %s", meta["index"], operation["error"])
-                results.append({
-                    "index": meta["index"], "title": meta["title"],
-                    "file_path": None, "url": None, "prompt": meta["prompt"],
-                    "video_id": op_name,
-                    "error": f"Veo generation failed: {json.dumps(operation['error'])}",
-                })
-                continue
-
-            try:
-                uri = _extract_video_uri(operation)
-                logger.info("[%d] Downloading video from %s...", meta["index"], uri[:80])
-                video_bytes = _gemini_download(uri)
-                meta["file_path"].write_bytes(video_bytes)
-                logger.info(
-                    "[%d] Saved %s (%d bytes)",
-                    meta["index"], meta["file_path"].name, len(video_bytes),
-                )
-                results.append({
-                    "index": meta["index"], "title": meta["title"],
-                    "file_path": str(meta["file_path"].resolve()),
-                    "url": uri, "prompt": meta["prompt"], "video_id": op_name,
-                })
-            except Exception as exc:
-                logger.error("[%d] Video download failed: %s", meta["index"], exc)
-                results.append({
-                    "index": meta["index"], "title": meta["title"],
-                    "file_path": None, "url": None, "prompt": meta["prompt"],
-                    "video_id": op_name, "error": f"Download failed: {exc}",
-                })
+            result = _process_veo_completion(op_name, operation, meta["file_path"])
+            if result.get("error"):
+                logger.error("[%d] %s", meta["index"], result["error"])
+            results.append({
+                "index": meta["index"], "title": meta["title"],
+                "prompt": meta["prompt"],
+                "file_path": result.get("file_path"),
+                "url": result.get("url"),
+                "video_id": op_name,
+                "error": result.get("error"),
+            })
 
         if queue or pending:
             time.sleep(VIDEO_POLL_INTERVAL)
@@ -365,6 +381,52 @@ def gemini_generate_videos(
     succeeded = sum(1 for r in merged if r["file_path"])
     logger.info("Done: %d/%d videos generated → %s", succeeded, total, out.resolve())
     return merged
+
+def gemini_generate_one_video(
+    prompt: str,
+    size: str,
+    output_path: str | Path,
+) -> dict:
+    """Generate a single video via Veo and save to *output_path*.
+
+    Returns a result dict with ``file_path``, ``url``, ``prompt``, and
+    ``video_id`` (the Veo operation name) keys.
+    """
+    aspect_ratio = _nearest_aspect_ratio(size, _VIDEO_ASPECT_RATIOS)
+
+    try:
+        op_name = _submit_video(prompt, aspect_ratio)
+    except Exception as exc:
+        return {
+            "file_path": None, "url": None, "prompt": prompt,
+            "video_id": None, "error": f"Failed to submit: {exc}",
+        }
+
+    deadline = time.time() + VIDEO_POLL_TIMEOUT
+    while time.time() < deadline:
+        try:
+            operation = _gemini_request(op_name, method="GET")
+        except RuntimeError as exc:
+            return {
+                "file_path": None, "url": None, "prompt": prompt,
+                "video_id": op_name, "error": str(exc),
+            }
+
+        if operation.get("done"):
+            break
+        time.sleep(VIDEO_POLL_INTERVAL)
+    else:
+        return {
+            "file_path": None, "url": None, "prompt": prompt,
+            "video_id": op_name,
+            "error": f"Timed out after {VIDEO_POLL_TIMEOUT}s",
+        }
+
+    result = _process_veo_completion(op_name, operation, Path(output_path))
+    result["prompt"] = prompt
+    return result
+
+
 
 
 # ---------------------------------------------------------------------------

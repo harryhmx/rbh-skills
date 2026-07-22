@@ -6,10 +6,12 @@ These examples create `media-segments.json` only because actual media generation
 
 ```json
 {
+  "name": "nature-scenes",
   "segments": [
     {
       "index": 0,
       "title": "Sunset mountains",
+      "slug": "sunset",
       "image_prompt": "A breathtaking sunset over snow-capped mountains, warm orange and pink sky, photorealistic"
     },
     {
@@ -27,8 +29,8 @@ python scripts/cli.py image -i media-segments.json -o images/
 
 ```text
 images/
-├── 000.png
-└── 001.png
+├── nature-scenes-sunset.png   # name + slug
+└── nature-scenes-001.png      # name + index (no slug)
 ```
 
 The CLI summary contains two results because the input contains two segments:
@@ -56,10 +58,12 @@ A segment may contain all three known fields:
 
 ```json
 {
+  "name": "lesson-1",
   "segments": [
     {
       "index": 0,
       "title": "Welcome",
+      "slug": "welcome",
       "image_prompt": "A welcoming English classroom, warm morning light",
       "video_prompt": "Slow camera movement through a welcoming English classroom in warm morning light",
       "text": "Welcome to today's English adventure."

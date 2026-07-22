@@ -14,10 +14,12 @@ The CLI automatically loads the shared `skills/.env`.
 
 ```json
 {
+  "name": "lesson-1",
   "segments": [
     {
       "index": 0,
       "title": "Opening scene",
+      "slug": "opening",
       "image_prompt": "A bright classroom at sunrise",
       "video_prompt": "Slow dolly into a bright classroom at sunrise",
       "text": "Welcome to today's lesson."
@@ -28,11 +30,12 @@ The CLI automatically loads the shared `skills/.env`.
 
 Rules:
 
-- The root object contains only the required, non-empty `segments` array.
-- Each item is an object containing `index`, `title`, and one or more known media fields: `image_prompt`, `video_prompt`, `text`.
-- Indexes are non-negative integers ordered contiguously from `0`; they determine filenames such as `000.png`.
+- The root object contains the required `segments` array and an optional `name` (kebab-case string for filename prefixes).
+- Each item is an object containing `index`, `title`, an optional `slug` (kebab-case for custom filenames), and one or more known media fields: `image_prompt`, `video_prompt`, `text`.
+- Indexes are non-negative integers ordered contiguously from `0`; they determine filenames when neither `name` nor `slug` is set.
 - Titles and every present media field are non-empty strings.
 - The current command requires its fixed field: image → `image_prompt`, video → `video_prompt`, speech → `text`.
+- File naming follows `{name}-{slug}{ext}` when both are present, `{name}-{index:03d}{ext}` when only name is given, or `{index:03d}{ext}` when neither is set.
 - Unknown fields are rejected. The batch count is derived from the array length; no separate count field is accepted.
 
 Validation finishes before output directories, credentials, or provider requests are touched.
@@ -50,7 +53,7 @@ python scripts/cli.py image -i media-segments.json -o images/ --size 512x512
 | `--output` | `-o` | Output directory | `output/` |
 | `--size` | | Positive `WxH` dimensions | `IMAGE_SIZE` or `1024x768` |
 
-Images are saved as `000.png`, `001.png`, …
+Images use the project filename scheme: `{name}-{slug}.png`, `{name}-{index:03d}.png`, or `{index:03d}.png`.
 
 ## video
 
@@ -66,7 +69,7 @@ python scripts/cli.py video -i media-segments.json -o videos/
 | `--num-frames` | | Positive frame count ≤441 satisfying `8n+1` | `VIDEO_NUM_FRAMES` or `121` |
 | `--frame-rate` | | FPS from 1 through 60 | `VIDEO_FRAME_RATE` or `24` |
 
-Videos are saved as `000.mp4`, `001.mp4`, … All submitted inputs remain represented in the stdout results, including submission failures, provider failures, download failures, and timeouts. With Gemini/Veo, size maps to the nearest supported aspect ratio and Agnes-only frame settings are ignored.
+Videos use the project filename scheme: `{name}-{slug}.mp4`, `{name}-{index:03d}.mp4`, or `{index:03d}.mp4`. All submitted inputs remain represented in the stdout results, including submission failures, provider failures, download failures, and timeouts. With Gemini/Veo, size maps to the nearest supported aspect ratio and Agnes-only frame settings are ignored.
 
 ## speech
 
@@ -80,6 +83,29 @@ python scripts/cli.py speech -i media-segments.json -o audio/
 | `--output` | `-o` | Output directory | `output/` |
 
 SiliconFlow output is MP3; Gemini TTS output is 24 kHz mono WAV.
+
+
+## Single generation via --prompt
+
+All media commands also accept ``--prompt`` for one-off generation without a JSON file.
+
+```bash
+# Single image
+python scripts/cli.py image --prompt "A sunset over mountains" -o sunset.png
+python scripts/cli.py image --prompt "A sunset" -o output/ --size 512x512
+
+# Single video
+python scripts/cli.py video --prompt "A car driving through desert" -o car.mp4
+python scripts/cli.py video --prompt "Drone shot over forest" -o output/ --size 1024x768
+
+# Single speech
+python scripts/cli.py speech --prompt "Welcome to the lesson" -o greeting.mp3
+python scripts/cli.py speech --prompt "Hello world" -o output/
+```
+
+When ``-o`` is a directory or ends with ``/``, a default filename (``output.png``, ``output.mp4``, ``output.mp3``, or ``output.wav``) is used inside it. Otherwise ``-o`` is treated as the exact output file path.
+
+When ``-i`` is given, batch generation is used with the same defaults as before.
 
 ## Batch summary
 

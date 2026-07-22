@@ -217,6 +217,25 @@ def cmd_concat(args: argparse.Namespace) -> None:
         _fail(exc)
 
 
+
+def cmd_stitch(args: argparse.Namespace) -> None:
+    from scripts.stitch import stitch_images
+
+    if len(args.inputs) < 2:
+        _fail(ValueError("At least two input images are required"))
+    try:
+        _emit(stitch_images(
+            args.inputs,
+            output_path=args.output,
+            direction=args.direction,
+            spacing=args.spacing,
+            align=args.align,
+            background=args.background,
+        ))
+    except Exception as exc:
+        _fail(exc)
+
+
 def cmd_overlay(args: argparse.Namespace) -> None:
     from scripts.overlay import load_overlay_spec, overlay_images
 
@@ -379,6 +398,22 @@ def main() -> None:
     p.add_argument("-o", "--output", default=None,
                    help="Output file (default: <dir>.mp4 next to the directory)")
     p.set_defaults(func=cmd_concat)
+
+
+
+    # ---- stitch ----
+    p = subparsers.add_parser("stitch", help="Stitch multiple images into a single composite image (vertical or horizontal)")
+    p.add_argument("-o", "--output", required=True, help="Output composite image")
+    p.add_argument("inputs", nargs="+", help="Source image files (2 or more)")
+    p.add_argument("--direction", default="vertical", choices=["vertical", "horizontal"],
+                   help="Stack direction (default: vertical)")
+    p.add_argument("--spacing", type=int, default=0,
+                   help="Pixels between images (default: 0)")
+    p.add_argument("--align", default="center", choices=["left", "center", "right", "top", "bottom"],
+                   help="Alignment: left/center/right for vertical, top/center/bottom for horizontal (default: center)")
+    p.add_argument("--background", default="#FFFFFF",
+                   help="Background color for gaps (hex #RRGGBB or named; default: #FFFFFF)")
+    p.set_defaults(func=cmd_stitch)
 
     # ---- overlay ----
     p = subparsers.add_parser(
