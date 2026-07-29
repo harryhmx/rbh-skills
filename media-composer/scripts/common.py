@@ -24,6 +24,37 @@ ASSETS_DIR = SKILL_ROOT / "assets"
 
 
 # ---------------------------------------------------------------------------
+# Project venv resolution (symlink- and CWD-independent)
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=None)
+def resolve_venv_python() -> str | None:
+    """Locate the project venv's Python interpreter.
+
+    Resolved from THIS file's physical location (``Path(__file__).resolve()``),
+    so it is found no matter how the skill is installed — a direct checkout, a
+    symlink into ``~/.claude/skills``, or launched from any working directory.
+    Walks a bounded set of ancestors looking for ``.venv/bin/python`` (then
+    ``venv/``, then ``python3``), so it picks up a skill-local or skills-root
+    venv without scanning the whole disk. The first match (closest to the
+    script) wins.
+
+    Returns the absolute interpreter path, or ``None`` if none exists — callers
+    then fall back to the running interpreter, which is fine for stdlib-only
+    subcommands on machines that have not created a venv.
+    """
+    here = Path(__file__).resolve()  # .../media-composer/scripts/common.py
+    for parent in list(here.parents)[:5]:  # scripts/ → skill/ → skills/ → …
+        for venv_name in (".venv", "venv"):
+            for bin_name in ("python", "python3"):
+                candidate = parent / venv_name / "bin" / bin_name
+                if candidate.exists():
+                    return str(candidate)
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Subprocess wrapper
 # ---------------------------------------------------------------------------
 

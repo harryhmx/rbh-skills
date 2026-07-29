@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -24,7 +25,7 @@ _skill_dir = Path(__file__).resolve().parents[1]
 if str(_skill_dir) not in sys.path:
     sys.path.insert(0, str(_skill_dir))
 
-from scripts.common import parse_time  # noqa: E402
+from scripts.common import parse_time, resolve_venv_python  # noqa: E402
 
 
 def _fail(exc: Exception) -> None:
@@ -34,6 +35,26 @@ def _fail(exc: Exception) -> None:
 
 def _emit(result) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def _ensure_venv() -> None:
+    """Re-exec under the project venv's Python if we're not already in it.
+
+    Makes every CLI invocation land in the correct interpreter — the one with
+    Pillow / mlx-whisper / torch installed — regardless of how it was launched:
+    any ``python``, any working directory, symlinked skill or not. See
+    ``common.resolve_venv_python``. With no venv present the current interpreter
+    is kept, so stdlib-only subcommands still run on machines without one.
+    """
+    venv_python = resolve_venv_python()
+    if not venv_python:
+        return
+    try:
+        if Path(venv_python).resolve() == Path(sys.executable).resolve():
+            return  # already running inside the venv
+    except OSError:
+        return
+    os.execv(venv_python, [venv_python, *sys.argv])
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +193,7 @@ def cmd_subtitle_burn(args: argparse.Namespace) -> None:
             args.input, args.srt, args.output,
             font=args.font, font_size=args.font_size, color=args.color,
             position=args.position, margin_v=args.margin_v,
-            margin_lr=args.margin_lr, crf=args.crf,
+            margin_lr=args.margin_lr, bold=args.bold, crf=args.crf,
         ))
     except Exception as exc:
         _fail(exc)
@@ -265,6 +286,7 @@ def cmd_overlay(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    _ensure_venv()
     parser = argparse.ArgumentParser(
         description="Media Composer — media editing and transcription toolkit",
     )
@@ -364,6 +386,8 @@ def main() -> None:
     p.add_argument("--margin-v", type=int, default=None, help="Vertical margin (default: preset 20)")
     p.add_argument("--margin-lr", type=int, default=None,
                    help="Left/right margins to stop edge overflow (default: preset 28)")
+    p.add_argument("--bold", action="store_true", default=None,
+                   help="Render subtitles in bold (default: preset, off)")
     p.add_argument("--crf", type=int, default=16, help="x264 CRF (default: 16)")
     p.set_defaults(func=cmd_subtitle_burn)
 

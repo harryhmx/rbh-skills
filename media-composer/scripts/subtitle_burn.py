@@ -66,6 +66,7 @@ def subtitle_burn(
     position: str | None = None,
     margin_v: int | None = None,
     margin_lr: int | None = None,
+    bold: bool | None = None,
     crf: int = 16,
 ) -> dict:
     """Burn *srt_path* into the video with configurable libass styling.
@@ -82,6 +83,7 @@ def subtitle_burn(
     margin_lr = margin_lr if margin_lr is not None else preset.get("margin_lr", 28)
     outline = preset.get("outline", 2)
     shadow = preset.get("shadow", 1)
+    bold = bold if bold is not None else preset.get("bold", False)
 
     if position not in _ALIGNMENTS:
         raise ValueError(f"position must be one of {'/'.join(_ALIGNMENTS)}")
@@ -92,7 +94,7 @@ def subtitle_burn(
 
     ass_color = _to_ass_color(color)
     force_style = (
-        f"FontName={font},Fontsize={font_size},"
+        f"FontName={font},Fontsize={font_size},Bold={-1 if bold else 0},"
         f"PrimaryColour={ass_color},OutlineColour=&H00000000,"
         f"BorderStyle=1,Outline={outline},Shadow={shadow},"
         f"Alignment={_ALIGNMENTS[position]},"
@@ -125,6 +127,7 @@ def subtitle_burn(
         "style": {
             "font": font, "font_size": font_size, "color": color,
             "position": position, "margin_v": margin_v, "margin_lr": margin_lr,
+            "bold": bold,
         },
         "duration": round(probe_video(out)["duration"], 3),
     }

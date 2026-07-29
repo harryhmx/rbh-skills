@@ -14,9 +14,15 @@ subcommands are local ffmpeg/Pillow/PyTorch operations with no cloud AI calls
 ## Quick start
 
 ```bash
-source ../.venv/bin/activate
 python scripts/cli.py <subcommand> --help
 ```
+
+No manual activation needed: on launch `cli.py` locates the project venv (the
+`.venv` beside this skill) from its own file path — symlink- and
+CWD-independent — and re-execs into it, so Pillow / mlx-whisper / torch resolve
+correctly on any machine. If no venv exists, the stdlib-only subcommands
+(`trim`, `extract-audio`, `replace-segment`, `overlay`, `concat`, `enhance`,
+`subtitle-burn`) still run under the current interpreter.
 
 ## Subcommands
 
