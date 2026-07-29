@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 #   image:  "agnes" (default) | "gemini" | "openai"
 #   video:  "agnes" (default) | "gemini"
 #   speech: "siliconflow" (default) | "gemini"
-IMAGE_PROVIDER = os.environ.get("IMAGE_PROVIDER", "agnes").strip().lower()
+IMAGE_PROVIDER = os.environ.get("IMAGE_PROVIDER", "openai").strip().lower()
 VIDEO_PROVIDER = os.environ.get("VIDEO_PROVIDER", "agnes").strip().lower()
 SPEECH_PROVIDER = os.environ.get("SPEECH_PROVIDER", "siliconflow").strip().lower()
 
@@ -83,6 +83,10 @@ GEMINI_TTS_VOICE = os.environ.get("GEMINI_TTS_VOICE", "Kore")
 MAX_RETRIES = 2
 DOWNLOAD_RETRIES = 3          # retries for the download step only
 DOWNLOAD_BACKOFF_BASE = 2.0   # seconds, multiplied by 2^(attempt-1)
+
+# Image-to-image (i2i) limits
+REFS_MAX_COUNT = 4            # max reference images per segment / --ref
+REFS_ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +152,7 @@ def load_segments_json(path: str | Path, media_type: str = "image") -> tuple[lis
     if not isinstance(segments, list) or not segments:
         raise ValueError("segments must be a non-empty array")
 
-    allowed_fields = {"index", "title", "slug", "image_prompt", "video_prompt", "text"}
+    allowed_fields = {"index", "title", "slug", "image_prompt", "image_refs", "video_prompt", "text"}
     required_field = {"image": "image_prompt", "video": "video_prompt", "speech": "text"}[media_type]
     for expected_index, segment in enumerate(segments):
         if not isinstance(segment, dict):
@@ -165,10 +169,116 @@ def load_segments_json(path: str | Path, media_type: str = "image") -> tuple[lis
         slug = segment.get("slug")
         if slug is not None and (not isinstance(slug, str) or not slug.strip()):
             raise ValueError("segment 'slug' must be a non-empty string when present")
+
+        # Validate image_refs when present (i2i mode), then resolve to
+        # absolute paths so downstream callers don't need the JSON dir.
+        image_refs = segment.get("image_refs")
+        if image_refs is not None:
+            if not isinstance(image_refs, list):
+                raise ValueError("segment 'image_refs' must be an array")
+            if not image_refs:
+                raise ValueError("segment 'image_refs' must be non-empty when present")
+            if len(image_refs) > REFS_MAX_COUNT:
+                raise ValueError(
+                    f"segment 'image_refs' has {len(image_refs)} items, "
+                    f"max {REFS_MAX_COUNT}"
+                )
+            json_dir = Path(path).resolve().parent
+            resolved: list[str] = []
+            for i, ref_path in enumerate(image_refs):
+                if not isinstance(ref_path, str) or not ref_path.strip():
+                    raise ValueError(
+                        f"segment 'image_refs[{i}]' must be a non-empty string"
+                    )
+                full_path = (json_dir / ref_path).resolve()
+                # Reject absolute paths and parent-dir escapes
+                if ref_path.startswith("/") or ".." in Path(ref_path).parts:
+                    raise ValueError(
+                        f"segment 'image_refs[{i}]' must be a relative path "
+                        f"inside the project directory, got: '{ref_path}'"
+                    )
+                if not full_path.is_file():
+                    raise ValueError(
+                        f"segment 'image_refs[{i}]' file not found: '{ref_path}' "
+                        f"(resolved to '{full_path}')"
+                    )
+                ext = full_path.suffix.lower()
+                if ext not in REFS_ALLOWED_EXTENSIONS:
+                    raise ValueError(
+                        f"segment 'image_refs[{i}]' unsupported extension "
+                        f"'{ext}'; allowed: {', '.join(sorted(REFS_ALLOWED_EXTENSIONS))}"
+                    )
+                resolved.append(str(full_path))
+            # Replace the relative paths with resolved absolute paths
+            segment["image_refs"] = resolved
+
         if not isinstance(segment.get(required_field), str) or not segment[required_field].strip():
             raise ValueError(f"each segment requires a non-empty {required_field}")
 
     return segments, data.get("name")
+
+
+def validate_image_refs(refs: list[str], base_dir: str | Path | None = None) -> list[Path]:
+    """Validate and resolve CLI-provided ``--ref`` paths.
+
+    Parameters
+    ----------
+    refs : list[str]
+        List of paths to reference images (strings from CLI ``--ref``).
+    base_dir : str, Path, or None
+        Directory to resolve relative paths against.  When ``None``,
+        resolves against the current working directory.
+
+    Returns
+    -------
+    list[Path]
+        Resolved absolute paths, all confirmed to exist.
+
+    Raises
+    ------
+    ValueError
+        If any path fails validation (count, existence, extension,
+        absolute/escape).
+    """
+    if not refs:
+        raise ValueError("refs must be non-empty when provided")
+    if len(refs) > REFS_MAX_COUNT:
+        raise ValueError(
+            f"too many refs ({len(refs)}), max {REFS_MAX_COUNT}"
+        )
+
+    root = Path(base_dir).resolve() if base_dir else Path.cwd()
+    resolved: list[Path] = []
+
+    for i, ref_path in enumerate(refs):
+        if not ref_path.strip():
+            raise ValueError(f"ref[{i}] must be a non-empty path")
+
+        # Reject absolute paths and escapes
+        p = Path(ref_path)
+        if p.is_absolute() or ".." in p.parts:
+            raise ValueError(
+                f"ref[{i}] must be a relative path inside the project "
+                f"directory, got: '{ref_path}'"
+            )
+
+        full = (root / p).resolve()
+        if not full.is_file():
+            raise ValueError(
+                f"ref[{i}] file not found: '{ref_path}' "
+                f"(resolved to '{full}')"
+            )
+
+        ext = full.suffix.lower()
+        if ext not in REFS_ALLOWED_EXTENSIONS:
+            raise ValueError(
+                f"ref[{i}] unsupported extension '{ext}'; "
+                f"allowed: {', '.join(sorted(REFS_ALLOWED_EXTENSIONS))}"
+            )
+
+        resolved.append(full)
+
+    return resolved
 
 
 # ---------------------------------------------------------------------------

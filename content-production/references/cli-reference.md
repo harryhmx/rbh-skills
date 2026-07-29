@@ -37,6 +37,7 @@ Rules:
 - The current command requires its fixed field: image → `image_prompt`, video → `video_prompt`, speech → `text`.
 - File naming follows `{name}-{slug}{ext}` when both are present, `{name}-{index:03d}{ext}` when only name is given, or `{index:03d}{ext}` when neither is set.
 - Unknown fields are rejected. The batch count is derived from the array length; no separate count field is accepted.
+- The optional `image_refs` field (array of relative paths, max 4) enables image-to-image mode for that segment.  Paths are relative to the JSON file's directory and must point to existing `.png`, `.jpg`, `.jpeg`, or `.webp` files.  Segments without `image_refs` use text-to-image — mixed batches are supported.
 
 Validation finishes before output directories, credentials, or provider requests are touched.
 
@@ -49,11 +50,31 @@ python scripts/cli.py image -i media-segments.json -o images/ --size 512x512
 
 | Argument | Short | Description | Default |
 |---|---|---|---|
-| `--input` | `-i` | Media input requiring `image_prompt` | required |
-| `--output` | `-o` | Output directory | `output/` |
+| `--input` | `-i` | Media input requiring `image_prompt` | required (batch) |
+| `--output` | `-o` | Output directory or file path | `output/` |
 | `--size` | | Positive `WxH` dimensions | `IMAGE_SIZE` or `1024x768` |
+| `--ref` | | Reference image for i2i (repeatable, max 4). First ref is the base image; optional second ref is a mask (OpenAI) or additional reference (Gemini). | none (text-to-image) |
 
 Images use the project filename scheme: `{name}-{slug}.png`, `{name}-{index:03d}.png`, or `{index:03d}.png`.
+
+### Image-to-image (i2i)
+
+```bash
+# Single — edit an existing image
+python scripts/cli.py image --prompt "Change the title to '2026'" --ref poster.png -o poster-v2.png
+
+# Single — reference-driven generation with multiple refs
+python scripts/cli.py image --prompt "Generate a 3D avatar in this style" --ref photo-1.jpg --ref photo-2.jpg -o avatar.png
+
+# Batch — segments with image_refs field
+# Segments without image_refs use text-to-image; mixed batches are supported.
+```
+
+**Provider support**: `openai` (default, via `/images/edits` multipart) and `gemini` (inline image blocks). `agnes` does **not** support i2i — requests with refs raise `provider_capability_unsupported`.
+
+**Segment-level i2i**: Add optional `image_refs` (array of relative paths, max 4) to any segment. Paths are relative to the JSON file's directory. When a segment has `image_refs`, CLI `--ref` is ignored for that segment.
+
+**Compliance**: Only process images you own or have explicit authorization to modify. Do not use i2i for watermark removal, attribution forgery, or copyright circumvention.
 
 ## video
 
@@ -93,6 +114,9 @@ All media commands also accept ``--prompt`` for one-off generation without a JSO
 # Single image
 python scripts/cli.py image --prompt "A sunset over mountains" -o sunset.png
 python scripts/cli.py image --prompt "A sunset" -o output/ --size 512x512
+
+# Single image-to-image
+python scripts/cli.py image --prompt "Edit this image" --ref photo.png -o edited.png
 
 # Single video
 python scripts/cli.py video --prompt "A car driving through desert" -o car.mp4
@@ -188,7 +212,7 @@ The `media-composer` CSV → PNG step is deferred until a DOCX with tables needs
 
 | Variable | Options | Default |
 |---|---|---|
-| `IMAGE_PROVIDER` | `agnes` / `gemini` / `openai` | `agnes` |
+| `IMAGE_PROVIDER` | `openai` / `gemini` / `agnes` | `openai` |
 | `VIDEO_PROVIDER` | `agnes` / `gemini` | `agnes` |
 | `SPEECH_PROVIDER` | `siliconflow` / `gemini` | `siliconflow` |
 

@@ -70,7 +70,7 @@ File naming follows `{name}-{slug}{ext}` when both are present, `{name}-{index:0
 
 Use the shared virtual environment and `.env` one level above this skill. When a project directory is specified, create the JSON input inside that directory so all artifacts are collocated. **Every command below requires escalation as described above.**
 
-When generating media, always announce which provider is active before calling the CLI. The active provider is set by `IMAGE_PROVIDER`, `VIDEO_PROVIDER`, or `SPEECH_PROVIDER` in `skills/.env` (default is `agnes` for image/video, `siliconflow` for speech).
+When generating media, always announce which provider is active before calling the CLI. The active provider is set by `IMAGE_PROVIDER`, `VIDEO_PROVIDER`, or `SPEECH_PROVIDER` in `skills/.env` (default is `openai` for image, `agnes` for video, `siliconflow` for speech).
 
 ```bash
 # Batch generation — JSON and output files in the same project directory
@@ -82,6 +82,15 @@ When generating media, always announce which provider is active before calling t
 ../.venv/bin/python scripts/cli.py image   --prompt "A sunset over mountains" -o sunset.png
 ../.venv/bin/python scripts/cli.py video   --prompt "A car driving through desert" -o car.mp4
 ../.venv/bin/python scripts/cli.py speech  --prompt "Hello world" -o greeting.mp3
+
+# Image-to-image (i2i) — edit an existing image (scenario A)
+../.venv/bin/python scripts/cli.py image   --prompt "Change title to 'Summer Camp 2026'" --ref poster.png -o poster-v2.png
+
+# Image-to-image (i2i) — reference-driven generation (scenario B, multiple refs)
+../.venv/bin/python scripts/cli.py image   --prompt "Generate a 3D Pixar-style avatar" --ref photo-1.jpg --ref photo-2.jpg -o avatar.png
+
+# Batch i2i — segments with image_refs field (see cli-reference.md for schema)
+# Segments without image_refs use text-to-image; mixed batches are supported.
 
 # Supported document operations
 ../.venv/bin/python scripts/cli.py extract -i report.docx -o report.txt
@@ -103,9 +112,27 @@ When generating media, always announce which provider is active before calling t
 
 For a simple full-document text dump, prefer environment-native tools such as `textutil` (DOCX on macOS) or `pdftotext` when available. Use this CLI when those are unavailable, a partial range is needed, or structured DOCX → Markdown conversion is required.
 
+## Image-to-image (i2i)
+
+The `image` command supports image-to-image generation via `--ref` (single) or `image_refs` (batch). Two scenarios share the same interface:
+
+| Scenario | Example | Provider support |
+|---|---|---|
+| **A. Instruction-based editing** | Change poster text, add/remove elements | openai (default), gemini |
+| **B. Reference-driven generation** | Photo → cartoon avatar, product → scene | openai (default), gemini |
+
+- `--ref` is repeatable (max 4). The first ref is the primary image; a second ref serves as a mask (OpenAI) or additional reference (Gemini).
+- `agnes` does **not** support i2i — requests with refs raise `provider_capability_unsupported`.
+- Per-segment `image_refs` in batch JSON takes precedence over CLI `--ref`. Segments without `image_refs` use text-to-image — **mixed batches are fully backward compatible**.
+
+### Compliance
+
+**Only process images you own or have explicit authorization to modify.**
+Do not use i2i to remove watermarks from others' work, forge attribution, or bypass copyright protection. This skill is designed for in-house content production — if a request is clearly aimed at infringing someone else's rights, refuse it.
+
 ## Configuration and references
 
-Providers and defaults are configured in the shared `skills/.env`. The CLI needs this file at runtime, which is another reason it cannot run inside the sandbox. Switching `IMAGE_PROVIDER` (`agnes`, `gemini`, or `openai`), `VIDEO_PROVIDER`, or `SPEECH_PROVIDER` does not change the CLI commands.
+Providers and defaults are configured in the shared `skills/.env`. The CLI needs this file at runtime, which is another reason it cannot run inside the sandbox. Switching `IMAGE_PROVIDER` (`openai`, `gemini`, or `agnes`), `VIDEO_PROVIDER`, or `SPEECH_PROVIDER` does not change the CLI commands.
 
 - [cli-reference.md](references/cli-reference.md) — schema, arguments, supported formats, and configuration
 - [examples.md](references/examples.md) — media-generation examples

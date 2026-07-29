@@ -128,19 +128,45 @@ _IMAGE_ASPECT_RATIOS = [
 ]
 
 
-def gemini_generate_image(prompt: str, size: str) -> bytes:
+def gemini_generate_image(
+    prompt: str, size: str, refs: list[Path] | None = None,
+) -> bytes:
     """Generate a single image and return its raw bytes.
 
     Uses ``POST /interactions`` with a Nano Banana model
     (default ``gemini-3.1-flash-image``).  The ``WxH`` *size* is mapped to
     the nearest supported aspect ratio; resolution comes from
     ``GEMINI_IMAGE_SIZE`` (1K / 2K / 4K).
+
+    When *refs* is provided, each image is added as an inline base64 image
+    block before the text prompt in the input array, enabling
+    image-to-image generation.
     """
+    import base64 as b64
+
     aspect_ratio = _nearest_aspect_ratio(size, _IMAGE_ASPECT_RATIOS)
+
+    # Build input blocks: ref images first (if any), then text prompt
+    input_blocks: list[dict] = []
+    if refs:
+        for ref_path in refs:
+            data = Path(ref_path).read_bytes()
+            ext = ref_path.suffix.lower()
+            mime_map = {
+                ".png": "image/png", ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg", ".webp": "image/webp",
+            }
+            mime_type = mime_map.get(ext, "image/png")
+            input_blocks.append({
+                "type": "image",
+                "data": b64.b64encode(data).decode("ascii"),
+                "mime_type": mime_type,
+            })
+    input_blocks.append({"type": "text", "text": prompt})
 
     payload = {
         "model": GEMINI_IMAGE_MODEL,
-        "input": [{"type": "text", "text": prompt}],
+        "input": input_blocks,
         "response_format": {
             "type": "image",
             "aspect_ratio": aspect_ratio,
@@ -150,7 +176,7 @@ def gemini_generate_image(prompt: str, size: str) -> bytes:
     }
     data = _gemini_request("interactions", payload)
     block = _find_interaction_block(data, "image")
-    return base64.b64decode(block["data"])
+    return b64.b64decode(block["data"])
 
 
 # ---------------------------------------------------------------------------

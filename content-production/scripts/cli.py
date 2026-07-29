@@ -9,8 +9,8 @@ media-segments JSON; the ``--prompt`` flag runs single generation directly.
 ``extract`` / ``convert`` take a source document, not media segments.
 
 Usage:
-    python scripts/cli.py image   -i <media-segments.json> [-o <dir>] [--size WxH]
-    python scripts/cli.py image   --prompt "prompt text" [-o <file>] [--size WxH]
+    python scripts/cli.py image   -i <media-segments.json> [-o <dir>] [--size WxH] [--ref <path> ...]
+    python scripts/cli.py image   --prompt "prompt text" [-o <file>] [--size WxH] [--ref <path> ...]
     python scripts/cli.py video   -i <media-segments.json> [-o <dir>] [--size WxH] [--num-frames N] [--frame-rate FPS]
     python scripts/cli.py video   --prompt "prompt text" [-o <file>] [--size WxH] [--num-frames N] [--frame-rate FPS]
     python scripts/cli.py speech  -i <media-segments.json> [-o <dir>]
@@ -29,6 +29,12 @@ Examples:
 
     # Single image from prompt
     python scripts/cli.py image --prompt "A sunset over mountains" -o sunset.png
+
+    # Single image-to-image — edit an existing image (scenario A)
+    python scripts/cli.py image --prompt "Change title to 'Summer Camp 2026'" --ref poster.png -o poster-v2.png
+
+    # Single image-to-image — reference-driven generation (scenario B, multiple refs)
+    python scripts/cli.py image --prompt "Generate a 3D Pixar-style avatar" --ref photo-1.jpg --ref photo-2.jpg -o avatar.png
 
     # Generate videos from segments
     python scripts/cli.py video -i media-segments.json -o videos/
@@ -85,10 +91,12 @@ if str(_skill_dir) not in sys.path:
 
 from scripts.common import (
     IMAGE_SIZE_DEFAULT,
+    REFS_MAX_COUNT,
     VIDEO_SIZE_DEFAULT,
     VIDEO_NUM_FRAMES_DEFAULT,
     VIDEO_FRAME_RATE_DEFAULT,
     load_segments_json,
+    validate_image_refs,
 )  # noqa: E402
 
 from scripts.images import generate_images          # noqa: E402
@@ -146,6 +154,15 @@ def _single_output_path(output_arg: str | None, default_name: str) -> Path:
 
 def cmd_image(args: argparse.Namespace) -> None:
     """Handle the ``image`` subcommand."""
+    # Validate refs
+    refs = None
+    if args.refs:
+        try:
+            refs = validate_image_refs(args.refs)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(2)
+
     if args.prompt:
         # ---- Single generation from --prompt ----
         size = args.size
@@ -156,7 +173,7 @@ def cmd_image(args: argparse.Namespace) -> None:
         output_path = _single_output_path(args.output, "output.png")
 
         try:
-            result = generate_one_image(args.prompt, size, output_path)
+            result = generate_one_image(args.prompt, size, output_path, refs=refs)
         except RuntimeError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)
@@ -181,6 +198,7 @@ def cmd_image(args: argparse.Namespace) -> None:
                 name=name,
                 size=size,
                 output_dir=args.output,
+                cli_refs=refs,
             )
         except RuntimeError as exc:
             print(f"Error: {exc}", file=sys.stderr)
@@ -362,6 +380,14 @@ def main() -> None:
         type=_size,
         default=IMAGE_SIZE_DEFAULT,
         help=f"Image size in WxH format (default: {IMAGE_SIZE_DEFAULT})",
+    )
+    image_parser.add_argument(
+        "--ref",
+        action="append",
+        default=None,
+        dest="refs",
+        help=f"Reference image for image-to-image generation (repeatable, max {REFS_MAX_COUNT}). "
+             "Supported providers: openai (default), gemini.",
     )
 
     # ---- video ----
