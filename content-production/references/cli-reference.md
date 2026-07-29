@@ -127,7 +127,7 @@ Media commands print one JSON summary to stdout:
 | Command | Supported input | Output | Notes |
 |---|---|---|---|
 | `extract` | DOCX, PDF | plain text / `.txt` | `--range` selects DOCX paragraphs or PDF pages |
-| `convert` | DOCX | structured Markdown / `.md` | preserves headings, lists, emphasis, and tables |
+| `convert` | DOCX | structured Markdown / `.md` + sidecar assets | preserves headings, lists, emphasis; extracts images and tables |
 
 PPTX and XLSX are currently unsupported.
 
@@ -136,6 +136,51 @@ python scripts/cli.py extract -i report.docx -o report.txt
 python scripts/cli.py extract -i paper.pdf --range 2-5 -o excerpt.txt
 python scripts/cli.py convert -i report.docx -o report.md
 ```
+
+### convert — asset extraction
+
+`convert` writes embedded images and tables to a media directory and references them from the Markdown. Asset filenames derive from the **input document stem** (e.g. `article-49.docx` → `article-49`):
+
+| Asset | Filename | Markdown |
+|---|---|---|
+| Image | `{stem}-image-{n}.{ext}` (e.g. `article-49-image-1.png`, `article-49-image-3.jpeg`) | own block `![]({stem}-image-{n}.{ext})`, separated from text |
+| Table | `{stem}-table-{n}.csv` | GFM table by default; `--tables-as-images` emits `![]({stem}-table-{n}.png)` instead |
+
+Images are resolved in document order via their drawing relationships, so file numbering always matches the reference order, and each image is emitted as its own block (never clinging to a paragraph). `·`/`•` bullet paragraphs are grouped into tight Markdown lists. The image extension is the one stored in the DOCX (`.png`, `.jpeg`, …). Table CSVs are UTF-8 with BOM so Excel opens CJK correctly.
+
+| Argument | Short | Description | Default |
+|---|---|---|---|
+| `--media-dir` | | Directory for extracted images and table CSVs | `<docx dir>/assets` (created if missing) |
+| `--no-images` | | Keep `(image)` text placeholders instead of extracting | off (extract) |
+| `--no-tables` | | Render tables as Markdown only, write no CSV | off (extract) |
+| `--tables-as-images` | | Reference tables as `![](stem-table-N.png)` for the WeChat pipeline | off |
+| `--first-as-h1` | | Force the first prose paragraph to `# Title` (strips bold/italic) | off |
+| `--normalize-headings` | | Remap heading levels via CJK numbering (`一、`→H2, `1.`→H3, `结语`→H2) | off |
+| `--min-image-bytes` | | Skip images smaller than this (bytes) | `0` (keep all) |
+
+```bash
+# Defaults: .md → <docx dir>/<stem>.md, assets → <docx dir>/assets
+python scripts/cli.py convert -i article-49.docx             # → article-49.md + assets/
+
+# Override either path
+python scripts/cli.py convert -i article-49.docx -o out/article-49.md --media-dir out/assets
+
+# WeChat pipeline: tables become image refs (render the PNGs from the CSVs with media-composer)
+python scripts/cli.py convert -i article.docx -o article.md --tables-as-images
+```
+
+#### WeChat publishing pipeline
+
+`convert` is the entry point of the DOCX → 微信公众号 authoring pipeline (BillTalks / AA 代运营). WeChat does not support HTML tables and breaks wide tables on mobile, so tables are routed through images:
+
+```
+DOCX → convert (extract images + tables→csv) → Markdown (local image refs)
+     → media-composer (csv + style → PNG, re-inserted)   [table rendering]
+     → Obsidian md-to-wechat (custom CSS + images uploaded to mmbiz + draft sync)
+     → WeChat drafts
+```
+
+The `media-composer` CSV → PNG step is deferred until a DOCX with tables needs processing; image extraction is ready now.
 
 ## Configuration
 

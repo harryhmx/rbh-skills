@@ -22,9 +22,11 @@ DOCX / PDF document
         └── content-production CLI
                 ├── extract: DOCX/PDF → plain text
                 └── convert: DOCX → structured Markdown
+                        ├── images → {stem}-image-{n}.{ext} (inline ![](ref))
+                        └── tables → {stem}-table-{n}.csv (→ PNG via media-composer)
 ```
 
-The media input is temporary CLI scaffolding, not an additional user-facing JSON deliverable. `extract` and `convert` neither consume nor create it.
+The media input is temporary CLI scaffolding, not an additional user-facing JSON deliverable. `extract` and `convert` neither consume nor create it; `convert` does write image/table sidecar assets next to its Markdown output.
 
 ## Provider flows
 

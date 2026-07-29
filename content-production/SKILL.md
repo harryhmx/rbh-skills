@@ -1,7 +1,7 @@
 ---
 name: content-production
-description: "Generate batch images, videos, or speech from a validated media-segments JSON input; extract plain text from DOCX/PDF; convert DOCX to structured Markdown. Ordinary MD/JSON/TXT authoring is Agent-native and does not run this CLI."
-version: "0.8.2"
+description: "Generate batch images, videos, or speech from a validated media-segments JSON input; extract plain text from DOCX/PDF; convert DOCX to structured Markdown with embedded images extracted and tables extracted to CSV. Ordinary MD/JSON/TXT authoring is Agent-native and does not run this CLI."
+version: "0.9.0"
 sandbox: require-escalated
 ---
 
@@ -29,7 +29,7 @@ Ordinary `.md`/`.json`/`.txt` authoring does **not** need escalation — only th
   - **Multiple items (≥2)** → create a `media-segments.json` and pass it via `--input`/`-i`.
   - **JSON already exists** → pass it via `--input`/`-i` regardless of item count; do not recreate it.
   Never create `media-segments.json` as a standalone deliverable — only as an input artifact immediately before generation.
-- For documents, `extract` currently supports DOCX/PDF → plain text and `convert` supports DOCX → Markdown. PPTX/XLSX are not supported.
+- For documents, `extract` currently supports DOCX/PDF → plain text and `convert` supports DOCX → Markdown (extracting embedded images and tables as sidecar assets). PPTX/XLSX are not supported.
 - Story generation belongs to `adventure-academy`; compositing, captions, subtitles, and editing belong to `media-composer`.
 
 ## Media input
@@ -87,7 +87,19 @@ When generating media, always announce which provider is active before calling t
 ../.venv/bin/python scripts/cli.py extract -i report.docx -o report.txt
 ../.venv/bin/python scripts/cli.py extract -i paper.pdf --range 2-5 -o excerpt.txt
 ../.venv/bin/python scripts/cli.py convert -i report.docx -o report.md
+
+# convert extracts images + tables as sidecar assets into <docx dir>/assets by default.
+# Output .md defaults to <docx dir>/<stem>.md when -o is omitted.
+# Images  → {stem}-image-{n}.{ext}, emitted as their own ![](path) blocks (separated from text)
+# Tables  → {stem}-table-{n}.csv   (clean data handoff; render to PNG via media-composer)
+../.venv/bin/python scripts/cli.py convert -i article-49.docx             # → article-49.md + assets/
+# WeChat article pipeline: title → H1, sections → H2/H3, · bullets → lists
+../.venv/bin/python scripts/cli.py convert -i article-49.docx --first-as-h1 --normalize-headings
+../.venv/bin/python scripts/cli.py convert -i article-49.docx -o out/article-49.md --media-dir out/assets
+../.venv/bin/python scripts/cli.py convert -i article.docx -o article.md --tables-as-images   # WeChat: tables → ![](stem-table-N.png)
 ```
+
+`convert` writes images and table CSVs to `--media-dir` (default: an `assets` subdirectory beside the source DOCX, created if missing) and references images with paths relative to the `.md`. By default it also tidies the Markdown: images sit in their own blocks (never clinging to text), and `·`/`•` bullet paragraphs become tight Markdown lists. `--no-images` / `--no-tables` skip extraction; `--tables-as-images` swaps the Markdown table for an image reference (the PNG is rendered from the CSV by `media-composer`); `--first-as-h1` forces the first prose paragraph to an `# Title`; `--normalize-headings` remaps section heading levels via CJK numbering (`一、`→H2, `1.`→H3, `结语`→H2) — see [references/cli-reference.md](references/cli-reference.md).
 
 For a simple full-document text dump, prefer environment-native tools such as `textutil` (DOCX on macOS) or `pdftotext` when available. Use this CLI when those are unavailable, a partial range is needed, or structured DOCX → Markdown conversion is required.
 

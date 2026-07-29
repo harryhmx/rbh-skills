@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """CLI entry point for content-production — generate images, video, and speech
-from segments JSON (batch) or directly via --prompt (single), and extract text /
-convert documents to Markdown.
+from segments JSON (batch) or directly via --prompt (single), and extract text
+or convert documents to Markdown (extracting embedded images and tables as
+sidecar assets).
 
 The ``-i`` / ``--input`` flag runs batch generation from a validated
 media-segments JSON; the ``--prompt`` flag runs single generation directly.
@@ -15,7 +16,9 @@ Usage:
     python scripts/cli.py speech  -i <media-segments.json> [-o <dir>]
     python scripts/cli.py speech  --prompt "speech text" [-o <file>]
     python scripts/cli.py extract -i <file> [-o <out.txt>] [--range N-M] [--format docx|pdf]
-    python scripts/cli.py convert -i <file> [-o <out.md>]  [--format docx]
+    python scripts/cli.py convert -i <file> [-o <out.md>]  [--format docx] [--media-dir DIR]
+                                  [--no-images] [--no-tables] [--tables-as-images] [--first-as-h1]
+                                  [--normalize-headings] [--min-image-bytes N]
 
 Examples:
     # Generate images from segments (default 1024x768)
@@ -49,8 +52,13 @@ Examples:
     # Extract a page/paragraph range (1-indexed, inclusive)
     python scripts/cli.py extract -i paper.pdf --range 2-5 -o paper-excerpt.txt
 
-    # Convert to structured Markdown
-    python scripts/cli.py convert -i report.docx -o report.md
+    # Convert to Markdown. Defaults: .md → <docx dir>/<stem>.md, assets →
+    # <docx dir>/assets/ (images as {stem}-image-N.{ext}, tables as {stem}-table-N.csv)
+    python scripts/cli.py convert -i report.docx
+    python scripts/cli.py convert -i report.docx -o out/report.md --media-dir out/assets
+    python scripts/cli.py convert -i report.docx --tables-as-images   # WeChat: tables → ![](stem-table-N.png)
+    # WeChat article pipeline: title → H1, sections → H2/H3, · bullets → lists
+    python scripts/cli.py convert -i article.docx --first-as-h1 --normalize-headings
 """
 
 from __future__ import annotations
@@ -303,15 +311,25 @@ def cmd_extract(args: argparse.Namespace) -> None:
 
 def cmd_convert(args: argparse.Namespace) -> None:
     """Handle the ``convert`` subcommand — convert a document to Markdown."""
+    # Default output: <docx dir>/<stem>.md (same location and name as the source).
+    output = args.output or str(Path(args.input).with_suffix(".md"))
     try:
         text = convert_to_md(
             input_path=args.input,
             fmt=args.format,
+            media_dir=args.media_dir,
+            md_output_path=output,
+            extract_images=not args.no_images,
+            extract_tables=not args.no_tables,
+            tables_as_images=args.tables_as_images,
+            min_image_bytes=args.min_image_bytes,
+            force_first_h1=args.first_as_h1,
+            normalize_headings=args.normalize_headings,
         )
     except (FileNotFoundError, ValueError, NotImplementedError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
-    _write_text_output(text, args.output)
+    _write_text_output(text, output)
 
 
 def main() -> None:
@@ -442,12 +460,52 @@ def main() -> None:
     convert_parser.add_argument(
         "-o", "--output",
         default=None,
-        help="Output .md file (prints to stdout if omitted)",
+        help="Output .md file (default: <docx dir>/<stem>.md)",
     )
     convert_parser.add_argument(
         "--format",
         default=None,
         help="Force input format (docx); inferred from extension if omitted",
+    )
+    convert_parser.add_argument(
+        "--media-dir",
+        default=None,
+        help="Directory for extracted images and table CSVs "
+             "(default: <docx dir>/assets, created if missing)",
+    )
+    convert_parser.add_argument(
+        "--no-images",
+        action="store_true",
+        help="Do not extract images; keep the (image) text placeholders",
+    )
+    convert_parser.add_argument(
+        "--no-tables",
+        action="store_true",
+        help="Do not extract tables to CSV sidecar files",
+    )
+    convert_parser.add_argument(
+        "--tables-as-images",
+        action="store_true",
+        help="Reference tables as ![]({stem}-table-N.png) for the WeChat "
+             "pipeline (render the PNGs from the CSVs with media-composer)",
+    )
+    convert_parser.add_argument(
+        "--min-image-bytes",
+        type=int,
+        default=0,
+        help="Skip images smaller than this many bytes (default: 0 = keep all)",
+    )
+    convert_parser.add_argument(
+        "--first-as-h1",
+        action="store_true",
+        help="Force the first prose paragraph to an H1 title (# Title), "
+             "stripping bold/italic — for DOCX files whose title is a bold paragraph",
+    )
+    convert_parser.add_argument(
+        "--normalize-headings",
+        action="store_true",
+        help="Remap heading levels via CJK numbering (一、→H2, 1.→H3, 结语→H2) "
+             "for a clean hierarchy; pair with --first-as-h1 for title=H1/sections=H2",
     )
 
     args = parser.parse_args()
