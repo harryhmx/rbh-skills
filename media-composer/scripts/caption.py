@@ -15,8 +15,11 @@ readable on any background.  Style is fixed by
 ``assets/style-presets/title-default.json``; size and position are
 parameters.
 
-Note: Pillow cannot open PingFang.ttc on macOS — STHeiti Medium.ttc is the
-reliable CJK choice (libass is the opposite: use "PingFang SC" there).
+Font choice: the bundled SIL-OFL Source Han font (Noto Sans CJK SC, fetched
+by ``download_fonts.py``) is the license-clean default for commercial video;
+system fonts are last-resort fallbacks only. Pillow cannot open
+PingFang.ttc, so on Apple the fallback is STHeiti Medium.ttc (libass is the
+opposite — see ``subtitle_burn`` / cjk-fonts.md).
 """
 
 from __future__ import annotations
@@ -24,9 +27,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.common import ASSETS_DIR, logger, probe_video, resolve_ffmpeg, run
+from scripts.common import ASSETS_DIR, find_bundled_font, logger, probe_video, resolve_ffmpeg, run
 
-# CJK-capable font paths Pillow can actually open, in order of preference.
+# System CJK fonts Pillow can actually open — used only as fallbacks when the
+# bundled OFL Source Han font is absent. (Apple STHeiti/PingFang licenses
+# forbid embedding in commercial video — do not rely on them for publish.)
 _CJK_FONT_CANDIDATES = [
     "/System/Library/Fonts/STHeiti Medium.ttc",                 # macOS (Pillow-safe CJK)
     "/Library/Fonts/Arial Unicode.ttf",                         # macOS (broad coverage)
@@ -35,6 +40,10 @@ _CJK_FONT_CANDIDATES = [
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",   # Linux (Noto CJK)
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",          # Linux (Latin fallback)
 ]
+
+# The bundled OFL default (license-clean). Bold is unnecessary for the title
+# banner — Regular reads cleaner inside the semi-transparent box.
+_BUNDLED_DEFAULT = "NotoSansCJKsc-Regular.otf"
 
 _PRESET_FILE = ASSETS_DIR / "style-presets" / "title-default.json"
 
@@ -49,6 +58,10 @@ def _load_preset() -> dict:
 
 
 def _find_cjk_font() -> str | None:
+    # Prefer the bundled OFL Source Han font; fall back to system fonts.
+    bundled = find_bundled_font(_BUNDLED_DEFAULT)
+    if bundled:
+        return str(bundled)
     for path in _CJK_FONT_CANDIDATES:
         if Path(path).exists():
             return path

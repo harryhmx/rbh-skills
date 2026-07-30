@@ -17,7 +17,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.common import ASSETS_DIR, logger, probe_video, resolve_ffmpeg, run
+from scripts.common import (
+    ASSETS_DIR,
+    BUNDLED_FONTS_DIR,
+    bundled_fonts_dir_usable,
+    logger,
+    probe_video,
+    resolve_ffmpeg,
+    run,
+)
 
 # Named color presets → ASS &HAABBGGRR
 _COLOR_PRESETS = {
@@ -102,6 +110,13 @@ def subtitle_burn(
     )
     # The subtitles filter parses ':' and ',' — escape the filename minimally.
     srt_arg = str(srt).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+    # Point libass at the bundled OFL fonts dir so it resolves the bundled
+    # Source Han face by family name (license-clean default). Omitted when the
+    # dir has no fonts → fontconfig system fallback (prior behavior).
+    fontsdir_clause = ""
+    if bundled_fonts_dir_usable():
+        fd = str(BUNDLED_FONTS_DIR).replace("\\", "\\\\").replace(":", "\\:")
+        fontsdir_clause = f":fontsdir='{fd}'"
 
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -112,7 +127,7 @@ def subtitle_burn(
     run([
         ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
         "-i", str(input_path),
-        "-vf", f"subtitles='{srt_arg}':force_style='{force_style}'",
+        "-vf", f"subtitles='{srt_arg}':force_style='{force_style}'{fontsdir_clause}",
         "-c:v", "libx264", "-crf", str(crf), "-preset", "medium",
         "-pix_fmt", "yuv420p",
         "-c:a", "copy",

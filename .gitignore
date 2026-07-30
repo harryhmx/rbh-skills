@@ -38,3 +38,6 @@ Thumbs.db
 
 # Large model checkpoints (downloaded locally via media-composer/scripts/download_models.py)
 models/
+
+# Bundled OFL CJK fonts (downloaded locally via media-composer/scripts/download_fonts.py)
+media-composer/assets/fonts/

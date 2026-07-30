@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 MODELS_DIR = SKILL_ROOT.parent / "models"
 ASSETS_DIR = SKILL_ROOT / "assets"
+BUNDLED_FONTS_DIR = ASSETS_DIR / "fonts"
 
 
 # ---------------------------------------------------------------------------
@@ -52,6 +53,35 @@ def resolve_venv_python() -> str | None:
                 if candidate.exists():
                     return str(candidate)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Bundled OFL fonts (Source Han / Noto CJK SC) — license-clean CJK default
+# ---------------------------------------------------------------------------
+
+
+def find_bundled_font(filename: str) -> Path | None:
+    """Return the path of a bundled font file if present, else ``None``.
+
+    ``caption`` opens OTF/TTF directly by path (Pillow). The bundled SIL-OFL
+    Source Han fonts (``assets/fonts/``, fetched by ``download_fonts.py``) are
+    preferred over system fonts whose license forbids embedding in commercial
+    video (Apple STHeiti/PingFang). Callers fall back to system fonts when this
+    returns ``None`` (fonts not yet downloaded).
+    """
+    path = BUNDLED_FONTS_DIR / filename
+    return path if path.is_file() else None
+
+
+def bundled_fonts_dir_usable() -> bool:
+    """True if the bundled-fonts dir exists and holds at least one font file.
+
+    Gates whether ``subtitle-burn`` adds a ``fontsdir`` to the libass
+    ``subtitles`` filter so it can resolve the bundled OTF by family name.
+    """
+    return BUNDLED_FONTS_DIR.is_dir() and any(
+        BUNDLED_FONTS_DIR.glob(pat) for pat in ("*.otf", "*.ttf", "*.ttc")
+    )
 
 
 # ---------------------------------------------------------------------------

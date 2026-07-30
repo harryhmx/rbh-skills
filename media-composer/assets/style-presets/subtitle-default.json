@@ -1,5 +1,5 @@
 {
-  "font": "PingFang SC",
+  "font": "Noto Sans CJK SC",
   "font_size": 12,
   "color": "teal",
   "position": "bottom",
@@ -7,5 +7,5 @@
   "margin_lr": 28,
   "outline": 2,
   "shadow": 1,
-  "_note": "font_size is in libass PlayRes units, not pixels — calibrate by eye. Values reproduce bill-talks-v7."
+  "_note": "Font is the bundled SIL-OFL Source Han (Noto Sans CJK SC) resolved via libass fontsdir; license-clean for commercial video. font_size is in libass PlayRes units, not pixels — calibrate by eye. Values reproduce bill-talks-v7."
 }
