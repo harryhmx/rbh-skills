@@ -21,7 +21,9 @@ logger = logging.getLogger(__name__)
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 MODELS_DIR = SKILL_ROOT.parent / "models"
 ASSETS_DIR = SKILL_ROOT / "assets"
-BUNDLED_FONTS_DIR = ASSETS_DIR / "fonts"
+# Fonts live at the skills repo root (shared, like models/) — not inside any
+# single skill — so other skills can use them too.
+BUNDLED_FONTS_DIR = SKILL_ROOT.parent / "fonts"
 
 
 # ---------------------------------------------------------------------------
@@ -64,9 +66,10 @@ def find_bundled_font(filename: str) -> Path | None:
     """Return the path of a bundled font file if present, else ``None``.
 
     ``caption`` opens OTF/TTF directly by path (Pillow). The bundled SIL-OFL
-    Source Han fonts (``assets/fonts/``, fetched by ``download_fonts.py``) are
-    preferred over system fonts whose license forbids embedding in commercial
-    video (Apple STHeiti/PingFang). Callers fall back to system fonts when this
+    Source Han fonts live at the skills repo root (``../fonts/`` — shared with
+    the RVM ``models/``, fetched by ``download_fonts.py``) and are preferred
+    over system fonts whose license forbids embedding in commercial video
+    (Apple STHeiti/PingFang). Callers fall back to system fonts when this
     returns ``None`` (fonts not yet downloaded).
     """
     path = BUNDLED_FONTS_DIR / filename

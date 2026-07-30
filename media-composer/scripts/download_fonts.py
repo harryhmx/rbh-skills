@@ -3,14 +3,15 @@
 
 Fetches the Simplified-Chinese Source Han family — Google's Noto CJK SC
 distribution (= Adobe + Google Source Han Sans/Serif, identical glyphs, SIL
-OFL) — into ``assets/fonts/`` and verifies md5.  These bundled fonts are the
+OFL) — into the shared ``../fonts/`` dir (skills repo root, same place as the
+RVM ``../models/``) and verifies md5.  These bundled fonts are the
 license-clean default for ``caption`` and ``subtitle-burn``; system fonts
 (Apple STHeiti/PingFang, whose license forbids embedding in commercial video)
 are last-resort fallbacks only.  Run directly, or let the skills pick them up
 once present.
 
 Mirrors ``download_models.py`` (RVM checkpoints): large binaries, gitignored,
-fetched on demand.
+fetched on demand, shared across skills at the repo root.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-FONTS_DIR = Path(__file__).resolve().parents[1] / "assets" / "fonts"
+FONTS_DIR = Path(__file__).resolve().parents[2] / "fonts"
 
 _SOURCE = "https://raw.githubusercontent.com/notofonts/noto-cjk/main"
 # family/weight → (url, md5)
@@ -53,7 +54,7 @@ def _md5(path: Path) -> str:
 
 
 def download(name: str, force: bool = False) -> Path:
-    """Download font *name* into assets/fonts/ (skips if present and valid)."""
+    """Download font *name* into ../fonts/ (skips if present and valid)."""
     if name not in FONTS:
         raise ValueError(f"Unknown font: {name} (choose {'/'.join(FONTS)})")
     url, md5 = FONTS[name]

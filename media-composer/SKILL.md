@@ -1,7 +1,7 @@
 ---
 name: media-composer
 description: "Media editing toolkit — transcribe audio/video to text or SRT subtitles (STT via MLX Whisper), overlay captions/titles onto images and videos, overlay images onto video time windows, trim videos, extract audio tracks, replace segments with images, replace video backgrounds (RVM person matting), enhance audio/video quality (two-pass loudnorm), burn SRT subtitles, composite image+audio pairs into video segments, and concatenate videos. Deterministic ffmpeg + Pillow operations. Use when asked to 'transcribe audio', 'convert speech to text', 'generate subtitles', 'caption an image', 'overlay text', 'add a title to a video', 'insert an image into a video', 'trim video', 'extract audio from video', 'replace a segment', 'replace background', 'enhance video', 'burn subtitles', 'composite images and audio into video', 'stitch multiple images together', or 'merge/concatenate videos'."
-version: "0.5.0"
+version: "0.5.1"
 allowed-tools: ["Bash", "Read", "Write"]
 ---
 
@@ -87,9 +87,10 @@ Every editing subcommand prints a JSON result (paths, timings, measured stats) t
 - **bundled CJK fonts** — `caption` / `subtitle-burn` default to the bundled
   SIL-OFL **Source Han** family (Noto Sans/Serif CJK SC) so commercial-video
   output is license-clean (Apple STHeiti/PingFang licenses forbid embedding the
-  outlines). Run `python scripts/download_fonts.py` once to fetch them into
-  `assets/fonts/` (gitignored); without them both commands fall back to system
-  fonts. See `references/cjk-fonts.md`.
+  outlines). Run `python scripts/download_fonts.py` once to fetch them into the
+  shared `../fonts/` dir at the skills repo root (gitignored, beside the RVM
+  `../models/`); without them both commands fall back to system fonts. See
+  `references/cjk-fonts.md`.
 - **caption** styles are fixed by `assets/style-presets/title-default.json` (rounded
   semi-transparent box, 2× supersampled CJK text, auto font-shrink to one line);
   `--font-size` and `--position` (top/center/bottom) are the tunables. Subtitle defaults

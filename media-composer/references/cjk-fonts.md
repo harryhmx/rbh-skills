@@ -52,10 +52,11 @@ project-level red line. A license that allows "display on the device" does
 
 ## Bundled OFL fonts (the default)
 
-`assets/fonts/` holds the bundled SIL-OFL **Source Han** family (Google's
-**Noto CJK SC** distribution — identical glyphs to Adobe Source Han Sans/Serif
-SC, co-released under SIL OFL). They are fetched on demand — large binaries,
-gitignored, same pattern as the RVM model checkpoints:
+The bundled SIL-OFL **Source Han** family (Google's **Noto CJK SC**
+distribution — identical glyphs to Adobe Source Han Sans/Serif SC,
+co-released under SIL OFL) lives at the skills repo root in `../fonts/`,
+shared with the RVM `../models/`. It is fetched on demand — large binaries,
+gitignored, same pattern as the model checkpoints:
 
 ```bash
 python scripts/download_fonts.py     # Noto Sans/Serif CJK SC, Regular + Bold
@@ -68,7 +69,7 @@ download):
 | Renderer | Default | Fallback | How it picks the bundled font |
 |----------|---------|----------|-------------------------------|
 | **Pillow** (`caption`) | `NotoSansCJKsc-Regular.otf` | system `_CJK_FONT_CANDIDATES` | opened directly by path |
-| **libass** (`subtitle-burn`) | family `Noto Sans CJK SC` | fontconfig system fonts | `fontsdir=assets/fonts` clause (added only when the dir has fonts) |
+| **libass** (`subtitle-burn`) | family `Noto Sans CJK SC` | fontconfig system fonts | `fontsdir=../fonts` clause (added only when the dir has fonts) |
 
 `subtitle-burn --bold` resolves to the real bundled **Bold** face
 (`NotoSansCJKsc-Bold.otf`) because Regular and Bold share the family name and

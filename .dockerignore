@@ -2,6 +2,7 @@
 content-production/
 media-composer/
 models/
+fonts/
 
 # Development files
 .env
