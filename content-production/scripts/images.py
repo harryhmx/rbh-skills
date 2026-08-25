@@ -26,10 +26,11 @@ from pathlib import Path
 from scripts.common import build_filename
 from scripts.common import (
     IMAGE_PROVIDER,
-    IMAGE_API_KEY,
-    IMAGE_BASE_URL,
-    IMAGE_MODEL,
     IMAGE_SIZE_DEFAULT,
+    AGNES_API_KEY,
+    AGNES_IMAGE_BASE_URL,
+    AGNES_IMAGE_MODEL,
+    AGNES_IMAGE_SIZE_DEFAULT,
     GEMINI_API_KEY,
     OPENAI_API_KEY,
     OPENAI_BASE_URL,
@@ -50,11 +51,11 @@ def _agnes_image_request(payload: dict) -> dict:
     """Send a JSON request to the Agnes AI images endpoint."""
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
-        f"{IMAGE_BASE_URL}/v1/images/generations",
+        f"{AGNES_IMAGE_BASE_URL}/v1/images/generations",
         data=body,
         method="POST",
         headers={
-            "Authorization": f"Bearer {IMAGE_API_KEY}",
+            "Authorization": f"Bearer {AGNES_API_KEY}",
             "Content-Type": "application/json",
         },
     )
@@ -86,7 +87,7 @@ def _extract_image_urls(data: dict) -> list[str]:
 
 
 def _generate_one_agnes(
-    prompt: str, size: str, refs: list[Path] | None = None,
+    prompt: str, size: str | None, refs: list[Path] | None = None,
 ) -> tuple[bytes, str | None]:
     """Generate a single image via Agnes AI. Returns ``(png_bytes, source_url)``.
 
@@ -99,12 +100,11 @@ def _generate_one_agnes(
             "support image-to-image (image_refs). Switch to openai or gemini."
         )
     payload: dict = {
-        "model": IMAGE_MODEL,
+        "model": AGNES_IMAGE_MODEL,
         "prompt": prompt,
         "extra_body": {"response_format": "url"},
     }
-    if size:
-        payload["size"] = size
+    payload["size"] = size or AGNES_IMAGE_SIZE_DEFAULT
 
     data = _agnes_image_request(payload)
     urls = _extract_image_urls(data)
@@ -347,7 +347,7 @@ def _generate_one_openai_sdk(prompt: str, size: str) -> tuple[bytes, str | None]
 
 _PROVIDERS: dict[str, tuple] = {
     "agnes": (
-        _generate_one_agnes, "IMAGE_API_KEY", lambda: IMAGE_API_KEY, False,
+        _generate_one_agnes, "AGNES_API_KEY", lambda: AGNES_API_KEY, False,
     ),
     "gemini": (
         _generate_one_gemini, "GEMINI_API_KEY", lambda: GEMINI_API_KEY, True,
@@ -400,7 +400,7 @@ def _resolve_provider():
 
 def generate_one_image(
     prompt: str,
-    size: str = IMAGE_SIZE_DEFAULT,
+    size: str | None = None,
     output_path: str | Path | None = None,
     refs: list[Path] | None = None,
 ) -> dict:
@@ -429,6 +429,11 @@ def generate_one_image(
         ``file_path`` (str or None), ``url`` (str or None), ``prompt`` (str).
     """
     _check_i2i_capability(refs)
+
+    # Let each provider use its own configured default while preserving an
+    # explicit --size override from callers.
+    if size is None:
+        size = AGNES_IMAGE_SIZE_DEFAULT if IMAGE_PROVIDER == "agnes" else IMAGE_SIZE_DEFAULT
 
     generate_fn = _resolve_provider()
 
@@ -476,7 +481,7 @@ def generate_one_image(
 def generate_images(
     segments: list[dict],
     name: str | None = None,
-    size: str = IMAGE_SIZE_DEFAULT,
+    size: str | None = None,
     output_dir: str | Path = "output",
     prompt_key: str = "image_prompt",
     cli_refs: list[Path] | None = None,

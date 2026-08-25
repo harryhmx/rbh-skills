@@ -52,7 +52,7 @@ python scripts/cli.py image -i media-segments.json -o images/ --size 512x512
 |---|---|---|---|
 | `--input` | `-i` | Media input requiring `image_prompt` | required (batch) |
 | `--output` | `-o` | Output directory or file path | `output/` |
-| `--size` | | Positive `WxH` dimensions | `IMAGE_SIZE` or `1024x768` |
+| `--size` | | Positive `WxH` dimensions | `IMAGE_SIZE`, or `AGNES_IMAGE_SIZE` when `IMAGE_PROVIDER=agnes` |
 | `--ref` | | Reference image for i2i (repeatable, max 4). First ref is the base image; optional second ref is a mask (OpenAI) or additional reference (Gemini). | none (text-to-image) |
 
 Images use the project filename scheme: `{name}-{slug}.png`, `{name}-{index:03d}.png`, or `{index:03d}.png`.
@@ -216,13 +216,17 @@ The `media-composer` CSV → PNG step is deferred until a DOCX with tables needs
 | `VIDEO_PROVIDER` | `agnes` / `gemini` | `agnes` |
 | `SPEECH_PROVIDER` | `siliconflow` / `gemini` | `siliconflow` |
 
-### Agnes AI / SiliconFlow
+### Image provider settings
 
 | Variable | Default |
 |---|---|
-| `IMAGE_BASE_URL` | `https://apihub.agnes-ai.com` |
-| `IMAGE_MODEL` | `agnes-image-2.1-flash` |
+| `IMAGE_BASE_URL` | provider-specific shared image endpoint (for example, SiliconFlow) |
+| `IMAGE_MODEL` | provider-specific shared image model |
 | `IMAGE_SIZE` | `1024x768` |
+| `AGNES_API_KEY` | *(required when `IMAGE_PROVIDER=agnes`)* |
+| `AGNES_IMAGE_BASE_URL` | `https://apihub.agnes-ai.com` |
+| `AGNES_IMAGE_MODEL` | `agnes-image-2.1-flash` |
+| `AGNES_IMAGE_SIZE` | `1024x768` |
 | `VIDEO_BASE_URL` | `https://apihub.agnes-ai.com` |
 | `VIDEO_MODEL` | `agnes-video-v2.0` |
 | `VIDEO_SIZE` | `1152x768` |
@@ -234,7 +238,7 @@ The `media-composer` CSV → PNG step is deferred until a DOCX with tables needs
 | `SPEECH_MODEL` | `fishaudio/fish-speech-1.5` |
 | `SPEECH_VOICE` | `fishaudio/fish-speech-1.5:anna` |
 
-Set `IMAGE_API_KEY`, `VIDEO_API_KEY`, and `SPEECH_API_KEY` for the selected providers.
+Set the provider-specific API key for each selected provider. Content Production's Agnes image path requires `AGNES_API_KEY`; video and speech use `VIDEO_API_KEY` and `SPEECH_API_KEY`. `IMAGE_API_KEY` remains available for other shared image integrations but is not used by the Agnes image module.
 
 ### OpenAI image generation
 

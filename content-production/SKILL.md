@@ -1,7 +1,7 @@
 ---
 name: content-production
 description: "Generate batch images, videos, or speech from a validated media-segments JSON input; extract plain text from DOCX/PDF; convert DOCX to structured Markdown with embedded images extracted and tables extracted to CSV. Ordinary MD/JSON/TXT authoring is Agent-native and does not run this CLI."
-version: "0.9.0"
+version: "0.9.2"
 sandbox: require-escalated
 ---
 
@@ -132,7 +132,7 @@ Do not use i2i to remove watermarks from others' work, forge attribution, or byp
 
 ## Configuration and references
 
-Providers and defaults are configured in the shared `skills/.env`. The CLI needs this file at runtime, which is another reason it cannot run inside the sandbox. Switching `IMAGE_PROVIDER` (`openai`, `gemini`, or `agnes`), `VIDEO_PROVIDER`, or `SPEECH_PROVIDER` does not change the CLI commands.
+Providers and defaults are configured in the shared `skills/.env`. The CLI needs this file at runtime, which is another reason it cannot run inside the sandbox. Switching `IMAGE_PROVIDER` (`openai`, `gemini`, or `agnes`), `VIDEO_PROVIDER`, or `SPEECH_PROVIDER` does not change the CLI commands. Agnes image generation uses its own `AGNES_API_KEY`, `AGNES_IMAGE_BASE_URL`, `AGNES_IMAGE_MODEL`, and `AGNES_IMAGE_SIZE` settings, so Adventure Academy's `IMAGE_*` settings can target SiliconFlow without changing this provider.
 
 - [cli-reference.md](references/cli-reference.md) — schema, arguments, supported formats, and configuration
 - [examples.md](references/examples.md) — media-generation examples

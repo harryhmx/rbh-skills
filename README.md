@@ -87,11 +87,19 @@ SUPABASE_KEY=your-supabase-service-role-key
 # Image provider: openai (default), gemini, or agnes
 IMAGE_PROVIDER=your-model-provider  # openai (default) / gemini / agnes
 
-# Agnes AI image generation
-IMAGE_API_KEY=your-agnes-ai-api-key
-IMAGE_BASE_URL=https://apihub.agnes-ai.com
-IMAGE_MODEL=agnes-image-2.1-flash
+# SiliconFlow/OpenAI-compatible image generation (used by Adventure Academy)
+IMAGE_API_KEY=your-siliconflow-api-key
+IMAGE_BASE_URL=https://api.siliconflow.com/v1
+IMAGE_MODEL=black-forest-labs/FLUX.2-pro
 IMAGE_SIZE=1024x768
+
+# Content Production Agnes image generation
+# These remain independent from IMAGE_* so changing Adventure Academy's image
+# provider does not change Agnes image generation in Content Production.
+AGNES_API_KEY=your-agnes-ai-api-key
+AGNES_IMAGE_BASE_URL=https://apihub.agnes-ai.com
+AGNES_IMAGE_MODEL=agnes-image-2.1-flash
+AGNES_IMAGE_SIZE=1024x768
 
 # OpenAI-compatible image generation (optional)
 # Keep the API key and any relay URL in this local .env file.

@@ -34,11 +34,19 @@ IMAGE_PROVIDER = os.environ.get("IMAGE_PROVIDER", "openai").strip().lower()
 VIDEO_PROVIDER = os.environ.get("VIDEO_PROVIDER", "agnes").strip().lower()
 SPEECH_PROVIDER = os.environ.get("SPEECH_PROVIDER", "siliconflow").strip().lower()
 
-# Agnes AI image generation
+# Generic image settings are retained for CLI compatibility. Provider-specific
+# defaults below keep Content Production's Agnes image path isolated from the
+# IMAGE_* settings used by Adventure Academy (currently SiliconFlow).
 IMAGE_API_KEY = os.environ.get("IMAGE_API_KEY", "")
 IMAGE_BASE_URL = os.environ.get("IMAGE_BASE_URL", "https://apihub.agnes-ai.com")
 IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "agnes-image-2.1-flash")
 IMAGE_SIZE_DEFAULT = os.environ.get("IMAGE_SIZE", "1024x768")
+
+# Agnes AI image generation (Content Production)
+AGNES_API_KEY = os.environ.get("AGNES_API_KEY", "")
+AGNES_IMAGE_BASE_URL = os.environ.get("AGNES_IMAGE_BASE_URL", "https://apihub.agnes-ai.com").rstrip("/")
+AGNES_IMAGE_MODEL = os.environ.get("AGNES_IMAGE_MODEL", "agnes-image-2.1-flash")
+AGNES_IMAGE_SIZE_DEFAULT = os.environ.get("AGNES_IMAGE_SIZE", "1024x768")
 
 # OpenAI image generation
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")

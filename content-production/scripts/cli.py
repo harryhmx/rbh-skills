@@ -166,7 +166,7 @@ def cmd_image(args: argparse.Namespace) -> None:
     if args.prompt:
         # ---- Single generation from --prompt ----
         size = args.size
-        if "x" not in size:
+        if size is not None and "x" not in size:
             print("Error: --size must be in WxH format (e.g. 1024x768)", file=sys.stderr)
             sys.exit(2)
 
@@ -188,7 +188,7 @@ def cmd_image(args: argparse.Namespace) -> None:
             sys.exit(2)
 
         size = args.size
-        if "x" not in size:
+        if size is not None and "x" not in size:
             print("Error: --size must be in WxH format (e.g. 1024x768)", file=sys.stderr)
             sys.exit(2)
 
@@ -378,8 +378,11 @@ def main() -> None:
     image_parser.add_argument(
         "--size",
         type=_size,
-        default=IMAGE_SIZE_DEFAULT,
-        help=f"Image size in WxH format (default: {IMAGE_SIZE_DEFAULT})",
+        default=None,
+        help=(
+            "Image size in WxH format (provider-specific default: "
+            f"{IMAGE_SIZE_DEFAULT}; Agnes uses AGNES_IMAGE_SIZE)"
+        ),
     )
     image_parser.add_argument(
         "--ref",

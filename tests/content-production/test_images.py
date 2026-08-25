@@ -12,7 +12,30 @@ if str(SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(SKILL_ROOT))
 
 from scripts import images
-from scripts.images import _generate_one_openai
+from scripts.images import _generate_one_agnes, _generate_one_openai
+
+
+class AgnesImageProviderTests(unittest.TestCase):
+    def test_uses_agnes_specific_endpoint_credentials_model_and_default_size(self):
+        with patch.object(images, "AGNES_API_KEY", "agnes-key"), \
+             patch.object(images, "AGNES_IMAGE_BASE_URL", "https://agnes.example"), \
+             patch.object(images, "AGNES_IMAGE_MODEL", "agnes-model"), \
+             patch.object(images, "AGNES_IMAGE_SIZE_DEFAULT", "768x512"), \
+             patch.object(images, "download_with_retry", return_value=b"x" * 1000) as download, \
+             patch.object(images, "_agnes_image_request", return_value={"data": [{"url": "https://img.example/a.png"}]}) as request:
+            image_bytes, source_url = _generate_one_agnes("A forest", "")
+
+        self.assertEqual(image_bytes, b"x" * 1000)
+        self.assertEqual(source_url, "https://img.example/a.png")
+        request.assert_called_once_with({
+            "model": "agnes-model",
+            "prompt": "A forest",
+            "extra_body": {"response_format": "url"},
+            "size": "768x512",
+        })
+        download.assert_called_once_with("https://img.example/a.png")
+
+
 class OpenAIImageProviderTests(unittest.TestCase):
     def setUp(self):
         self.transport = patch.object(images, "OPENAI_IMAGE_TRANSPORT", "curl")
@@ -70,7 +93,7 @@ class OpenAIImageProviderTests(unittest.TestCase):
             self.assertIs(images._resolve_provider(), images._generate_one_openai)
 
         with patch.object(images, "IMAGE_PROVIDER", "agnes"), \
-             patch.object(images, "IMAGE_API_KEY", "test-key"):
+             patch.object(images, "AGNES_API_KEY", "test-key"):
             self.assertIs(images._resolve_provider(), images._generate_one_agnes)
 
         with patch.object(images, "IMAGE_PROVIDER", "gemini"), \
