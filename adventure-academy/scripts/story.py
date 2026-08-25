@@ -6,7 +6,7 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 from common.db import get_db
-from config import settings
+from config import openai_compatible_base_url, settings
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
@@ -127,7 +127,7 @@ def generate_story(
 ) -> dict:
     client = OpenAI(
         api_key=settings.TEXT_API_KEY,
-        base_url=f"{settings.TEXT_BASE_URL}/v1",
+        base_url=openai_compatible_base_url(settings.TEXT_BASE_URL),
         timeout=60.0,
     )
     prompt = (
@@ -170,7 +170,9 @@ def generate_story(
                 ],
                 temperature=0.7,
             )
-            raw = response.choices[0].message.content.strip()
+            raw = (response.choices[0].message.content or "").strip()
+            if not raw:
+                raise ValueError("SiliconFlow returned an empty message")
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
             data = json.loads(raw)
@@ -181,7 +183,7 @@ def generate_story(
                 continue
 
             break
-        except (json.JSONDecodeError, KeyError) as e:
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError) as e:
             logger.warning("[story] Parse error (attempt %d): %s", attempt, e)
             continue
     else:

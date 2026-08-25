@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from common.db import get_db
-from config import settings
+from config import openai_compatible_base_url, settings
 from openai import OpenAI
 
 # Dynamically import decorators and session modules
@@ -50,7 +50,7 @@ def generate_project(prompt: str) -> dict:
     """
     client = OpenAI(
         api_key=settings.TEXT_API_KEY,
-        base_url=f"{settings.TEXT_BASE_URL}/v1",
+        base_url=openai_compatible_base_url(settings.TEXT_BASE_URL),
     )
     response = client.chat.completions.create(
         model=settings.TEXT_CHAT_MODEL,

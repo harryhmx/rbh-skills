@@ -9,7 +9,7 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-BUCKET = "stories"
+BUCKET = "adventure-academy"
 
 
 def _strip_markdown(text: str) -> str:

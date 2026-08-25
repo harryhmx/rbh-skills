@@ -42,6 +42,7 @@ def send_sms_verify_code(phone_number: str) -> dict:
     Returns:
         {"success": bool, "message": str, "cooldown_seconds": int}
     """
+    phone_number = re.sub(r"\s+", "", phone_number)
     if not PHONE_REGEX.match(phone_number):
         return {"success": False, "message": "Invalid phone number format"}
 
@@ -76,6 +77,10 @@ def check_sms_verify_code(phone_number: str, verify_code: str) -> dict:
     Returns:
         {"success": bool, "message": str, "error_type": str (optional)}
     """
+    phone_number = re.sub(r"\s+", "", phone_number)
+    verify_code = re.sub(r"\s+", "", verify_code)
+    if not PHONE_REGEX.match(phone_number):
+        return {"success": False, "message": "Invalid phone number format", "error_type": "invalid_phone"}
     if not verify_code:
         return {"success": False, "message": "Code is required", "error_type": "missing_code"}
 

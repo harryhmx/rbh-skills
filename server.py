@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
 from common.auth import setup_auth
-from common.db import init_db
+from common.db import init_db, get_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,6 +47,7 @@ class StoryRequest(BaseModel):
     user_age: int
     user_level: str
     project_id: str
+    project_slug: str | None = None
     require_story_id: str | None = None
     require_choice: str | None = None
     depth: int = 0
@@ -76,6 +77,26 @@ app.add_middleware(
 setup_auth(app)
 
 
+def resolve_remote_project_id(project_id: str, project_slug: str | None) -> str:
+    """Resolve Core's project slug to the Supabase project ID used by Skills."""
+    if not project_slug:
+        return project_id
+    try:
+        result = (
+            get_db()
+            .table("Project")
+            .select("id")
+            .eq("slug", project_slug)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            return result.data[0]["id"]
+    except Exception as exc:
+        logger.warning("[project] Remote slug lookup failed for %s: %s", project_slug, exc)
+    return project_id
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -93,8 +114,9 @@ async def sms_verify(req: SmsVerifyRequest):
 
 @app.post("/api/story/generate")
 async def generate_story_endpoint(req: StoryRequest, background_tasks: BackgroundTasks):
+    remote_project_id = resolve_remote_project_id(req.project_id, req.project_slug)
     existing = None if req.fresh_story else find_story(
-        req.project_id,
+        remote_project_id,
         req.user_age,
         req.user_level,
         require_story_id=req.require_story_id,
@@ -119,7 +141,7 @@ async def generate_story_endpoint(req: StoryRequest, background_tasks: Backgroun
         project_description=req.project_description,
         user_age=req.user_age,
         user_level=req.user_level,
-        project_id=req.project_id,
+        project_id=remote_project_id,
         require_story_id=req.require_story_id,
         require_choice=req.require_choice,
         depth=req.depth,
@@ -146,4 +168,6 @@ async def story_status(story_id: str):
     return {
         "imageReady": bool(story.get("imageUrl")),
         "audioReady": bool(story.get("audioUrl")),
+        "imageUrl": story.get("imageUrl"),
+        "audioUrl": story.get("audioUrl"),
     }

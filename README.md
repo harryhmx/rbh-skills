@@ -1,6 +1,6 @@
 # RBH Skills
 
-Python-based skill modules for the RBH platform — each skill is a self-contained module providing specific capabilities via FastAPI routes (for online RBH Agent) and/or CLI commands (for local Agent usage). Part of the RBH Brand AI education ecosystem.
+Python-based skill modules for the RBH platform — each skill is a self-contained module providing specific capabilities via FastAPI routes (for Web Agent usage) and/or CLI commands (for Local Agent usage). RBH combines AI technology with education for learners at every age, with Adventure Academy and Explore AI as current projects in the wider brand ecosystem.
 
 ## Skills Overview
 
@@ -16,6 +16,8 @@ Python-based skill modules for the RBH platform — each skill is a self-contain
 | **marketing-content** | Placeholder | Marketing copywriting + distribution strategy (planned). No code yet. |
 
 > **Placeholder skills** (`harry-math`, `cross-platform`, `media-director`, `marketing-content`) currently contain only a `SKILL.md` declaring their intended scope — no `scripts/`, no CLI, and no FastAPI routes. They are not deployed to Railway and need not be symlinked into an Agent until their first real module is built.
+
+`rbh-core` is intentionally both an API and CLI foundation. The Web Agent uses its FastAPI routes today; the Local Agent uses its parameterized CLI, and future Adventure Academy operations can be exposed through that same CLI without creating a second identity or Project system.
 
 ## Quick Start
 
@@ -74,8 +76,8 @@ ALIBABA_CLOUD_ACCESS_KEY_SECRET=your-aliyun-access-key-secret
 # ========== LLM Configuration ==========
 # SiliconFlow AI (or compatible OpenAI API endpoint)
 TEXT_API_KEY=your-llm-api-key
-TEXT_BASE_URL=https://api.siliconflow.cn/v1
-TEXT_CHAT_MODEL=Qwen/Qwen2.5-7B-Instruct
+TEXT_BASE_URL=https://api.siliconflow.com/v1
+TEXT_CHAT_MODEL=Qwen/Qwen3-32B
 
 # ========== Database (Supabase) ==========
 SUPABASE_URL=https://your-project.supabase.co
@@ -123,6 +125,8 @@ JWT_SECRET=your-jwt-secret-min-32-chars-recommended
 - `JWT_SECRET` should be at least 32 characters for security
 - `SUPABASE_KEY` requires service role key (not anon key) for admin operations
 - Keep `.env` file secure and never commit it to version control
+
+Adventure Academy currently uses SiliconFlow for story text, illustrations, and narration. Its media is uploaded to the Supabase Storage bucket `adventure-academy` under `images/{story_id}.png` and `audio/{story_id}.mp3`. See `adventure-academy/SKILL.md` for the exact provider fields and story request contract.
 
 ### Local Agent Integration (Required for Agent Skills)
 
@@ -207,6 +211,16 @@ uvicorn server:app --reload --host 0.0.0.0 --port 8000
 
 The server will be available at `http://localhost:8000`
 
+When the host requires FlClash to reach external providers, pass proxy variables to the server process rather than adding proxy logic to a skill:
+
+```bash
+HTTPS_PROXY=http://127.0.0.1:7890 \
+HTTP_PROXY=http://127.0.0.1:7890 \
+ALL_PROXY=http://127.0.0.1:7890 \
+NO_PROXY=127.0.0.1,localhost \
+uvicorn server:app --reload --host 0.0.0.0 --port 8000
+```
+
 ### Health Check
 
 ```bash
@@ -235,9 +249,9 @@ RBH Frontend (Next.js, Vercel)
     │
     ├──> RBH Skills API (FastAPI, Railway)
     │       ├── rbh-core          ──> SMS Service (Aliyun)
-    │       │                      ──> LLM (Project generation)
-    │       └── adventure-academy ──> LLM (Story generation)
-    │                              ──> Media generation
+    │       │                      ──> SiliconFlow (Project generation)
+    │       └── adventure-academy ──> SiliconFlow (story text, image, speech)
+    │                              ──> adventure-academy Storage bucket
     │
     └──> Supabase (PostgreSQL)
          ↑
@@ -267,6 +281,8 @@ Content Production Pipeline:
 | POST | `/api/story/generate` | adventure-academy | Generate story with branching support |
 | GET | `/api/story/status/{story_id}` | adventure-academy | Check story media generation status |
 
+Story generation returns the text story first; image and audio are generated in background tasks and uploaded to the `adventure-academy` bucket. Core polls the status route until both media URLs are available.
+
 ## CLI Usage (rbh-core)
 
 The `rbh-core` skill provides a CLI for local user management with conversational Agent support.
@@ -291,6 +307,8 @@ python rbh-core/scripts/cli.py project generate --prompt "Create a story about..
 > "Help me login to RBH platform"
 
 The agent will guide you through the conversational flow and execute commands with your input.
+
+Adventure Academy is currently consumed through the Web Agent story routes. Its future Local Agent commands should follow the same parameterized, non-interactive CLI pattern.
 
 ## Development Tips
 
@@ -337,7 +355,7 @@ pip install -r requirements.txt
 - **Language**: Python 3.12+
 - **Database**: Supabase (PostgreSQL) via Prisma-compatible schema
 - **Authentication**: Aliyun SMS + JWT sessions
-- **LLM**: SiliconFlow AI, Agnes AI (image), Gemini (video), Fish Speech (audio)
+- **LLM**: SiliconFlow AI for RBH Core and Adventure Academy; content-production also supports Agnes AI, Gemini, and Fish Speech providers
 - **Media Processing**: ffmpeg, Pillow, MLX Whisper (local), PyTorch (RVM matting)
 
 ## Contributing

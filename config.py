@@ -12,15 +12,15 @@ class Settings(BaseSettings):
     ALIBABA_CLOUD_ACCESS_KEY_ID: str = ""
     ALIBABA_CLOUD_ACCESS_KEY_SECRET: str = ""
 
-    # Text generation (Agnes AI)
+    # Text generation (SiliconFlow, OpenAI-compatible)
     TEXT_API_KEY: str = ""
-    TEXT_BASE_URL: str = "https://apihub.agnes-ai.com"
-    TEXT_CHAT_MODEL: str = "agnes-2.0-flash"
+    TEXT_BASE_URL: str = "https://api.siliconflow.com/v1"
+    TEXT_CHAT_MODEL: str = "Qwen/Qwen3-32B"
 
-    # Image generation (Agnes AI)
+    # Image generation (SiliconFlow)
     IMAGE_API_KEY: str = ""
-    IMAGE_BASE_URL: str = "https://apihub.agnes-ai.com"
-    IMAGE_MODEL: str = "agnes-image-2.1-flash"
+    IMAGE_BASE_URL: str = "https://api.siliconflow.com/v1"
+    IMAGE_MODEL: str = "black-forest-labs/FLUX.2-pro"
     IMAGE_SIZE: str = "1024x768"
 
     # Speech generation (SiliconFlow)
@@ -49,3 +49,14 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def openai_compatible_base_url(base_url: str) -> str:
+    """Return a normalized OpenAI-compatible API base URL.
+
+    SiliconFlow's configured URL already includes ``/v1`` while older local
+    configurations used a host-only URL. Supporting both avoids accidentally
+    producing ``/v1/v1`` while retaining backwards compatibility.
+    """
+    normalized = base_url.rstrip("/")
+    return normalized if normalized.endswith("/v1") else f"{normalized}/v1"
