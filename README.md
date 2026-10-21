@@ -10,12 +10,6 @@ Python-based skill modules for the RBH platform — each skill is a self-contain
 | **adventure-academy** | API | Story generation engine with branching chapters, RC/CT questions, cover images, and audio narration for gamified English learning. |
 | **content-production** | Agent Skill | Generate images/video/speech via pluggable providers (OpenAI/gpt-image-2 default, Gemini/Veo, Agnes AI, Fish Speech) with text-to-image and image-to-image (i2i) editing; extract plain text from DOCX/PDF; convert DOCX to Markdown. Local Agent creates or edits TXT/MD/JSON/... files from user prompts directly. |
 | **media-composer** | Agent Skill | Media editing toolkit: STT transcription (MLX Whisper), caption/title overlay, trim, extract-audio, replace-segment, replace-bg (RVM matting), enhance (loudnorm), subtitle-burn, composite (image+audio → segments), concat, stitch (multi-image → one composite). Last step of the pipeline. |
-| **harry-math** | Placeholder | AI-powered mathematics learning for the Harry Math line (planned). No code yet — slot reserved. |
-| **cross-platform** | Placeholder | Multi-platform format adaptation + one-click distribution (planned). No code yet. |
-| **media-director** | Placeholder | Vague brief + raw materials → storyboard → orchestrates content-production & media-composer (planned). No code yet. |
-| **marketing-content** | Placeholder | Marketing copywriting + distribution strategy (planned). No code yet. |
-
-> **Placeholder skills** (`harry-math`, `cross-platform`, `media-director`, `marketing-content`) currently contain only a `SKILL.md` declaring their intended scope — no `scripts/`, no CLI, and no FastAPI routes. They are not deployed to Railway and need not be symlinked into an Agent until their first real module is built.
 
 `rbh-core` is intentionally both an API and CLI foundation. The Web Agent uses its FastAPI routes today; the Local Agent uses its parameterized CLI, and future Adventure Academy operations can be exposed through that same CLI without creating a second identity or Project system.
 

@@ -515,7 +515,7 @@ def _resolve_image_refs(paragraph: Paragraph, state: _ConvertState) -> list[str]
 
         ref = f"{state.ref_prefix}{filename}"
         state.images.append(ref)
-        refs.append(f"![{state.stem}-image-{n}]({ref})")
+        refs.append(f"![]({ref})")
     return refs
 
 
@@ -650,7 +650,7 @@ def _table_to_md(table: Table, state: _ConvertState) -> str:
 
     if state.tables_as_images:
         png_ref = f"{state.ref_prefix}{state.stem}-table-{n}.png"
-        return f"![{state.stem}-table-{n}]({png_ref})"
+        return f"![]({png_ref})"
     return _rows_to_gfm(rows)
 
 
